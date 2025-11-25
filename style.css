@@ -1,0 +1,15 @@
+html, body {
+  margin: 0;
+  padding: 0;
+}
+canvas {
+  display: block;
+}
+canvas {
+    display: block;
+    width: 100vw;   /* Viewport Width */
+    height: 100vh;  /* Viewport Height */
+    object-fit: contain; /* Scales the content to fit the screen */
+    margin: 0;
+    padding: 0;
+}
