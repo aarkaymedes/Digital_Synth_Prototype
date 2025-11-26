@@ -163,8 +163,9 @@ function playDrumHit(type) {
     else if (type === 'snare') { snare.amp(0.5, 0.01); snare.amp(0, 0.2); }
 }
 
-// --- ARPEGGIATOR LOGIC ---
+// --- ARPEGGIATOR LOGIC (CORRECTED) ---
 
+// Helper to get the MIDI notes for a selected chord (Unchanged)
 function getChordNotes(nashvilleNumber, chordTypeName) {
     let selectedKey = ALL_KEYS[currentKeyIndex];
     let globalKeyOffset = KEY_MIDI_OFFSETS[selectedKey];
@@ -181,24 +182,32 @@ function getChordNotes(nashvilleNumber, chordTypeName) {
     return midiNotes;
 }
 
+// Helper to Play a Single Arp Note (Refined Envelope)
 function playArpNote(noteMidi) {
-    // Stop previous note sharply
+    // Stop all oscillators sharply before starting the new note
     for (let i = 0; i < MAX_VOICES; i++) {
-        chordOscillators[i].amp(0, 0.01);
+        chordOscillators[i].amp(0, 0.005); // Very quick stop
     }
     
-    // Play only the first oscillator (voice)
+    // Play only the first oscillator (voice) for the single note
     let osc = chordOscillators[0]; 
     osc.freq(midiToFreq(noteMidi));
-    osc.amp(0.8, 0.02); 
-    // Release slightly before the next beat interval
-    osc.amp(0, ARP_INTERVAL_MS / 1000 * 0.9); 
+    
+    // Use an envelope for a distinct, non-overlapping arpeggio note
+    const attackTime = 0.005;
+    const holdTime = (ARP_INTERVAL_MS / 1000) * 0.5; // Sustain for half the interval
+    const releaseTime = 0.05;
+
+    osc.amp(0.8, attackTime); // Attack
+    osc.amp(0.8, holdTime + attackTime); // Hold
+    osc.amp(0, holdTime + attackTime + releaseTime); // Release
 }
 
 function startArpeggiator() {
     if (arpLoop) clearInterval(arpLoop);
 
-    // Stop rhythmic checker if running
+    // Stop rhythmic checker if running (to prevent conflict)
+    // The base logic for startRepeatCheckerLoop is removed, so this is just for safety:
     // if (repeatModeLoop) clearInterval(repeatModeLoop); 
     
     arpStep = 0; // Reset to the first note
@@ -221,7 +230,8 @@ function startArpeggiator() {
             noteIndex = selectedChord.length - 1 - (arpStep % selectedChord.length);
         }
 
-        playArpNote(selectedChord[noteIndex]);
+        // --- CORE FIX: Calling single-note function for arpeggiation ---
+        playArpNote(selectedChord[noteIndex]); 
 
         arpStep++;
         redraw();
@@ -232,8 +242,6 @@ function stopArpeggiator() {
     if (arpLoop) clearInterval(arpLoop);
     arpLoop = null;
     stopAllChords(false);
-    // Restart the rhythmic chord checker loop (now it's just a placeholder)
-    // startRepeatCheckerLoop(); // Disabled as it conflicts with arpeggiator structure
 }
 
 
