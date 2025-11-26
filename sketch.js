@@ -78,6 +78,8 @@ const FEATURE_PAD_H = 120;
 const FEATURE_PAD_Y = 100;
 const FEATURE_PAD_GAP = 30;
 const FEATURE_PAD_START_X = 1350;
+
+// --- FULLSCREEN TAP ZONE ---
 const FULLSCREEN_TAP_ZONE_W = 400;
 const FULLSCREEN_TAP_ZONE_H = 150;
 
@@ -145,13 +147,15 @@ function stopAllChords(isRhythmicStop = false) {
     if (!pressedPad) { for (let pad of chordPads) { pad.isPressed = false; } }
 }
 
+// --- FIX: Rewritten to avoid CSP violation ---
 function startDrumSequencer() {
     let beatCount = 0;
     if (drumLoop) clearInterval(drumLoop);
-    drumLoop = setInterval(() => {
+    
+    drumLoop = setInterval(function() {
         if (beatCount % 2 === 0) { playDrumHit('kick'); } else { playDrumHit('snare'); }
         beatCount = (beatCount + 1) % 4;
-    }, INTERVAL_MS * 2);
+    }, INTERVAL_MS * 2); // Safely passes function reference
 }
 
 function stopDrumSequencer() {
@@ -183,18 +187,15 @@ function getChordNotes(nashvilleNumber, chordTypeName) {
 }
 
 function playArpNote(noteMidi) {
-    // Stop previous note sharply
     for (let i = 0; i < MAX_VOICES; i++) {
         chordOscillators[i].amp(0, 0.005); 
     }
     
-    // Play only the first oscillator (voice) for the single note
     let osc = chordOscillators[0]; 
     osc.freq(midiToFreq(noteMidi));
     
-    // Use an envelope for a distinct, non-overlapping arpeggio note
     const attackTime = 0.005;
-    const holdTime = (ARP_INTERVAL_MS / 1000) * 0.5; // Sustain for half the interval
+    const holdTime = (ARP_INTERVAL_MS / 1000) * 0.5; 
     const releaseTime = 0.05;
 
     osc.amp(0.8, attackTime); 
@@ -202,12 +203,13 @@ function playArpNote(noteMidi) {
     osc.amp(0, holdTime + attackTime + releaseTime); 
 }
 
+// --- FIX: Rewritten to avoid CSP violation ---
 function startArpeggiator() {
     if (arpLoop) clearInterval(arpLoop);
     
     arpStep = 0; 
 
-    arpLoop = setInterval(() => {
+    arpLoop = setInterval(function() {
         if (!pressedPad) {
             stopAllChords(true); 
             return;
@@ -229,7 +231,7 @@ function startArpeggiator() {
 
         arpStep++;
         redraw();
-    }, ARP_INTERVAL_MS);
+    }, ARP_INTERVAL_MS); // Safely passes function reference
 }
 
 function stopArpeggiator() {
@@ -239,12 +241,41 @@ function stopArpeggiator() {
 }
 
 
+// --- FULLSCREEN EXCLUSION HELPER ---
+
+function isOverAnyControl(x, y) {
+    // 1. Check CHORD PADS
+    for (let pad of chordPads) {
+        if (x > pad.x && x < pad.x + pad.w && y > pad.y && y < pad.y + pad.h) {
+            return true;
+        }
+    }
+    
+    // 2. Check FEATURE PADS (Top Right Block)
+    const padX = FEATURE_PAD_START_X;
+    const featurePadWidths = FEATURE_PAD_W * 3 + PAD_GAP_X * 2;
+    const featurePadHeight = FEATURE_PAD_H;
+    
+    if (x > padX && x < padX + featurePadWidths && y > FEATURE_PAD_Y && y < FEATURE_PAD_Y + featurePadHeight) {
+        return true;
+    }
+
+    // 3. Check SLIDER Knob/Track Area
+    const knobY = map(sliderPos, 0, 1, SLIDER_Y_MAX, SLIDER_Y_MIN);
+    if (dist(x, y, SLIDER_X, knobY) < SLIDER_RADIUS * 1.5) { 
+        return true;
+    }
+    
+    return false;
+}
+
+
 // --- DRAWING FUNCTIONS ---
 
 function draw() {
     background(BG_COLOR); 
     
-    // FIX 2: Calculate and apply the scaling transformation for responsiveness
+    // Calculate and apply the scaling transformation for responsiveness
     const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
     
     push(); 
@@ -346,7 +377,7 @@ function updateChordType() {
 
     currentChordTypeIndex = constrain(newIndex, 0, numTypes - 1);
     
-    // FIX 1: Only re-trigger sound if the discrete chord type actually changed.
+    // Only re-trigger sound if the discrete chord type actually changed.
     if (pressedPad && currentChordTypeIndex !== previousIndex) {
         if (repeatModeActive) {
             // Restart Arpeggiator immediately with new chord notes
