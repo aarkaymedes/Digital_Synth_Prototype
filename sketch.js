@@ -1,8 +1,6 @@
 // --- Global Variables ---
-// Removed fixed canvas size variables
-const DESIGN_W = 1920;
-const DESIGN_H = 1080;
-
+let canvasSizeW = 1920;
+let canvasSizeH = 1080;
 let chordPads = [];
 let nashvilleNumbers = ["i", "ii", "iii", "iv", "v", "vi", "vii°"]; 
 let chordTypes = ["Major", "Minor", "7th", "Sus4", "Add9"];
@@ -19,23 +17,30 @@ const KEY_MIDI_OFFSETS = {
 // --- FEATURE/SOUND VARIABLES ---
 let chordOscillators = []; 
 const MAX_VOICES = 4;
-const SYNTH_WAVEFORM = 'triangle';
+const SYNTH_WAVEFORM = 'sawtooth';
 
 // --- SLIDER VARIABLES ---
 let sliderPos = 0.5; 
 let sliderGrabbed = false;
 let grabbedTouchID = -1; 
 
-// --- DRUM/REPEAT LOGIC ---
+// --- DRUM/ARPEGGIATOR LOGIC (UPDATED) ---
 let kick, snare;         
 let drumMachineActive = false; 
 let drumLoop = null;     
-let repeatModeActive = false; 
+let repeatModeActive = false; // Now controls Arpeggiator state
 let pressedPad = null;        
-let repeatModeLoop = null;    
+
 const BPM = 120;         
 const REPEAT_INTERVAL_MS = 60000 / BPM; 
 const INTERVAL_MS = REPEAT_INTERVAL_MS / 2; 
+
+// Arpeggiator Setup
+let arpStep = 0; 
+let arpLoop = null; 
+const ARPEGGIATOR_PATTERNS = { "UP": 0, "DOWN": 1 };
+let currentArpPattern = ARPEGGIATOR_PATTERNS.UP;
+const ARP_INTERVAL_MS = 60000 / BPM / 4; // Use 16th note for speed
 
 // Defines the intervals and offsets (Unchanged)
 const CHORD_INTERVALS = {
@@ -55,8 +60,7 @@ const FEATURE_COLORS = {
     REPEAT: [255, 178, 0]    
 };
 
-// --- LAYOUT CONSTANTS (Based on 1920x1080 design) ---
-// CHORD PADS
+// --- LAYOUT CONSTANTS (PRECISE PNG MATCH) ---
 const CHORD_PAD_W = 280;
 const CHORD_PAD_H = 180;
 const PAD_GAP_X = 20;
@@ -64,21 +68,15 @@ const PAD_GAP_Y = 20;
 const PAD_START_X = 500;
 const PAD_START_Y_ROW1 = 550;
 const PAD_START_Y_ROW2 = PAD_START_Y_ROW1 + CHORD_PAD_H + PAD_GAP_Y;
-
-// SLIDER (Chord Quality)
 const SLIDER_X = 170;
 const SLIDER_Y_MIN = 350;
 const SLIDER_Y_MAX = 850;
 const SLIDER_RADIUS = 70; 
-
-// FEATURE PADS (Top Right 3 Buttons)
 const FEATURE_PAD_W = 180;
 const FEATURE_PAD_H = 120;
 const FEATURE_PAD_Y = 100;
 const FEATURE_PAD_GAP = 30;
 const FEATURE_PAD_START_X = 1350;
-
-// --- FULLSCREEN TAP ZONE ---
 const FULLSCREEN_TAP_ZONE_W = 400;
 const FULLSCREEN_TAP_ZONE_H = 150;
 
@@ -87,13 +85,11 @@ const FULLSCREEN_TAP_ZONE_H = 150;
 function preload() {}
 
 function setup() {
-    // FIX 2a: Create canvas using window size
     createCanvas(windowWidth, windowHeight); 
     noStroke();
     
     userStartAudio(); 
     
-    // Initialize Oscillators
     for (let i = 0; i < MAX_VOICES; i++) {
         let osc = new p5.Oscillator(SYNTH_WAVEFORM); 
         osc.amp(0);
@@ -101,47 +97,25 @@ function setup() {
         chordOscillators.push(osc);
     }
     
-    // Initialize Drum Oscillators
     kick = new p5.Oscillator('square'); kick.freq(50); kick.amp(0); kick.start();
     snare = new p5.Noise('white'); snare.amp(0); snare.start();
 
     initializeChordPads();
-    startRepeatCheckerLoop(); 
+    // We don't start the repeat checker loop now, it's called by the Arp toggle
 }
 
 function windowResized() {
-    // FIX 2c: Resize canvas when window size changes
     resizeCanvas(windowWidth, windowHeight);
 }
 
-
-// Initialize Chord Pads (EXACT PNG MATCH)
 function initializeChordPads() {
-    
     const ROW2_START_X = PAD_START_X - 150; 
 
-    // Row 1: i, ii, iii
     for (let i = 0; i < 3; i++) {
-        chordPads.push({ 
-            x: PAD_START_X + i * (CHORD_PAD_W + PAD_GAP_X), 
-            y: PAD_START_Y_ROW1, 
-            w: CHORD_PAD_W, 
-            h: CHORD_PAD_H, 
-            number: nashvilleNumbers[i], 
-            isPressed: false 
-        });
+        chordPads.push({ x: PAD_START_X + i * (CHORD_PAD_W + PAD_GAP_X), y: PAD_START_Y_ROW1, w: CHORD_PAD_W, h: CHORD_PAD_H, number: nashvilleNumbers[i], isPressed: false });
     }
-    
-    // Row 2: iv, v, vi, vii°
     for (let i = 3; i < 7; i++) {
-        chordPads.push({ 
-            x: ROW2_START_X + (i - 3) * (CHORD_PAD_W + PAD_GAP_X), 
-            y: PAD_START_Y_ROW2, 
-            w: CHORD_PAD_W, 
-            h: CHORD_PAD_H, 
-            number: nashvilleNumbers[i], 
-            isPressed: false 
-        });
+        chordPads.push({ x: ROW2_START_X + (i - 3) * (CHORD_PAD_W + PAD_GAP_X), y: PAD_START_Y_ROW2, w: CHORD_PAD_W, h: CHORD_PAD_H, number: nashvilleNumbers[i], isPressed: false });
     }
 }
 
@@ -160,21 +134,14 @@ function playChord(nashvilleNumber, chordTypeName) {
     for (let i = 0; i < intervals.length; i++) {
         let noteMidi = rootMidi + intervals[i];
         chordOscillators[i].freq(midiToFreq(noteMidi));
-        // Use a slight fade-in time for smoother attack
         chordOscillators[i].amp(0.4, 0.05); 
     }
-    for (let i = intervals.length; i < MAX_VOICES; i++) { 
-        chordOscillators[i].amp(0); 
-    }
+    for (let i = intervals.length; i < MAX_VOICES; i++) { chordOscillators[i].amp(0); }
 }
 
 function stopAllChords(isRhythmicStop = false) {
-    // FIX 1: Use a longer release time for smooth stopping, unless rhythmic mode demands immediate stop
     let releaseTime = isRhythmicStop ? 0.01 : 0.2; 
-    for (let osc of chordOscillators) { 
-        // Use a controlled time to reach zero amplitude
-        osc.amp(0, releaseTime); 
-    }
+    for (let osc of chordOscillators) { osc.amp(0, releaseTime); }
     if (!pressedPad) { for (let pad of chordPads) { pad.isPressed = false; } }
 }
 
@@ -196,48 +163,77 @@ function playDrumHit(type) {
     else if (type === 'snare') { snare.amp(0.5, 0.01); snare.amp(0, 0.2); }
 }
 
-function startRepeatCheckerLoop() {
-    if (repeatModeLoop) clearInterval(repeatModeLoop);
+// --- ARPEGGIATOR LOGIC ---
 
-    repeatModeLoop = setInterval(() => {
-        if (repeatModeActive && pressedPad) {
-            stopAllChords(true); 
-            let selectedType = chordTypes[currentChordTypeIndex];
-            playChord(pressedPad.number, selectedType);
-            
-            pressedPad.isPressed = !pressedPad.isPressed;
-            setTimeout(() => { if (pressedPad) pressedPad.isPressed = true; redraw(); }, REPEAT_INTERVAL_MS * 0.5); 
-            redraw();
-        }
-    }, REPEAT_INTERVAL_MS);
+function getChordNotes(nashvilleNumber, chordTypeName) {
+    let selectedKey = ALL_KEYS[currentKeyIndex];
+    let globalKeyOffset = KEY_MIDI_OFFSETS[selectedKey];
+    let scaleOffset = NASHVILLE_OFFSETS[nashvilleNumber];
+    let rootMidi = 60 + globalKeyOffset + scaleOffset; 
+    let midiNotes = [];
+
+    let intervals = (nashvilleNumber === "vii°") ? [0, 3, 6] : CHORD_INTERVALS[chordTypeName];
+    if (!intervals) return [];
+
+    for (let i = 0; i < intervals.length; i++) {
+        midiNotes.push(rootMidi + intervals[i]);
+    }
+    return midiNotes;
 }
 
-// --- FULLSCREEN EXCLUSION HELPER ---
+function playArpNote(noteMidi) {
+    // Stop previous note sharply
+    for (let i = 0; i < MAX_VOICES; i++) {
+        chordOscillators[i].amp(0, 0.01);
+    }
+    
+    // Play only the first oscillator (voice)
+    let osc = chordOscillators[0]; 
+    osc.freq(midiToFreq(noteMidi));
+    osc.amp(0.8, 0.02); 
+    // Release slightly before the next beat interval
+    osc.amp(0, ARP_INTERVAL_MS / 1000 * 0.9); 
+}
 
-function isOverAnyControl(x, y) {
-    // 1. Check CHORD PADS
-    for (let pad of chordPads) {
-        if (x > pad.x && x < pad.x + pad.w && y > pad.y && y < pad.y + pad.h) {
-            return true;
+function startArpeggiator() {
+    if (arpLoop) clearInterval(arpLoop);
+
+    // Stop rhythmic checker if running
+    // if (repeatModeLoop) clearInterval(repeatModeLoop); 
+    
+    arpStep = 0; // Reset to the first note
+
+    arpLoop = setInterval(() => {
+        if (!pressedPad) {
+            stopAllChords(true); 
+            return;
         }
-    }
-    
-    // 2. Check FEATURE PADS (Top Right Block)
-    const padX = FEATURE_PAD_START_X;
-    const featurePadWidths = FEATURE_PAD_W * 3 + PAD_GAP_X * 2;
-    const featurePadHeight = FEATURE_PAD_H;
-    
-    if (x > padX && x < padX + featurePadWidths && y > FEATURE_PAD_Y && y < FEATURE_PAD_Y + featurePadHeight) {
-        return true;
-    }
 
-    // 3. Check SLIDER Knob/Track Area
-    const knobY = map(sliderPos, 0, 1, SLIDER_Y_MAX, SLIDER_Y_MIN);
-    if (dist(x, y, SLIDER_X, knobY) < SLIDER_RADIUS * 1.5) { 
-        return true;
-    }
-    
-    return false;
+        const selectedType = chordTypes[currentChordTypeIndex];
+        const selectedChord = getChordNotes(pressedPad.number, selectedType);
+
+        if (selectedChord.length === 0) return;
+
+        let noteIndex;
+        if (currentArpPattern === ARPEGGIATOR_PATTERNS.UP) {
+            noteIndex = arpStep % selectedChord.length;
+        } else if (currentArpPattern === ARPEGGIATOR_PATTERNS.DOWN) {
+            noteIndex = selectedChord.length - 1 - (arpStep % selectedChord.length);
+        }
+
+        playArpNote(selectedChord[noteIndex]);
+
+        arpStep++;
+        redraw();
+    }, ARP_INTERVAL_MS);
+}
+
+function stopArpeggiator() {
+    if (arpLoop) clearInterval(arpLoop);
+    arpLoop = null;
+    stopAllChords(false);
+    // Restart the rhythmic chord checker loop (now it's just a placeholder)
+    // startRepeatCheckerLoop(); // Disabled as it conflicts with arpeggiator structure
 }
 
 
@@ -246,10 +242,10 @@ function isOverAnyControl(x, y) {
 function draw() {
     background(BG_COLOR); 
     
-    // FIX 2b: Calculate and apply the scaling transformation
+    // FIX 2: Calculate and apply the scaling transformation for responsiveness
     const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
     
-    push(); // Save the current transformation state
+    push(); 
     
     // Apply scaling and centering
     translate(
@@ -264,9 +260,9 @@ function draw() {
     drawFeaturePads();
     drawSlider();
     
-    pop(); // Restore the transformation state (essential if drawing outside the scaled area)
+    pop(); 
 
-    // Note: Slider drag is handled in touchMoved()
+    // The logic to handle dragging is now entirely in touchMoved()
 }
 
 function drawHeader() {
@@ -285,11 +281,11 @@ function drawHeader() {
     let type = chordTypes[currentChordTypeIndex];
     text(`Key: ${key} | Quality: ${type} | BPM: ${BPM}`, 50, 200);
     
-    // Repeat Mode Status Display
-    fill(repeatModeActive ? [200, 100, 0] : [100]); 
+    // Arpeggiator/Repeat Mode Status Display
+    fill(repeatModeActive ? [255, 100, 100] : [100]); 
     textSize(22);
     textAlign(LEFT, BOTTOM);
-    text(`Repeat: ${repeatModeActive ? 'RHYTHMIC ON' : 'HOLD'}`, 50, DESIGN_H - 40); // Use DESIGN_H for positioning
+    text(`Mode: ${repeatModeActive ? 'ARPEGGIATOR' : 'HOLD'}`, 50, DESIGN_H - 40);
 }
 
 function drawChordPads() {
@@ -323,7 +319,7 @@ function drawFeaturePads() {
     fill(drumColor[0], drumColor[1], drumColor[2], 255);
     rect(padX + FEATURE_PAD_W + FEATURE_PAD_GAP, FEATURE_PAD_Y, FEATURE_PAD_W, FEATURE_PAD_H, 10);
     
-    // 3. Repeat Mode Pad (Yellow)
+    // 3. Repeat Mode Pad (Yellow) - Now ARPEGGIATOR
     let repeatColor = FEATURE_COLORS.REPEAT; 
     fill(repeatColor[0], repeatColor[1], repeatColor[2], repeatModeActive ? 255 : 200); 
     rect(padX + 2 * (FEATURE_PAD_W + FEATURE_PAD_GAP), FEATURE_PAD_Y, FEATURE_PAD_W, FEATURE_PAD_H, 10);
@@ -353,8 +349,14 @@ function updateChordType() {
     
     // FIX 1: Only re-trigger sound if the discrete chord type actually changed.
     if (pressedPad && currentChordTypeIndex !== previousIndex) {
-        stopAllChords(true); 
-        playChord(pressedPad.number, chordTypes[currentChordTypeIndex]);
+        if (repeatModeActive) {
+            // Restart Arpeggiator immediately with new chord notes
+            startArpeggiator();
+        } else {
+            // Retrigger chord with new quality
+            stopAllChords(true); 
+            playChord(pressedPad.number, chordTypes[currentChordTypeIndex]);
+        }
     }
 }
 
@@ -379,7 +381,7 @@ function touchStarted() {
     let isTouch = touches.length > 0;
     let inputSource = isTouch ? touches : [{x: mouseX, y: mouseY, id: -1}];
     
-    // Calculate inverse scale factor to map touch coordinates back to 1920x1080 design space
+    // Calculate scale factors for touch mapping
     const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
     const inverseScale = 1 / scaleFactor;
     const xOffset = (windowWidth - DESIGN_W * scaleFactor) / 2;
@@ -424,10 +426,19 @@ function touchStarted() {
             return false;
         }
 
-        // Repeat Mode Pad (Yellow)
+        // Repeat/Arpeggiator Mode Pad (Yellow)
         let repeatX = padX + 2 * (FEATURE_PAD_W + PAD_GAP_X);
         if (tx > repeatX && tx < repeatX + FEATURE_PAD_W && ty > FEATURE_PAD_Y && ty < FEATURE_PAD_Y + FEATURE_PAD_H) {
             repeatModeActive = !repeatModeActive;
+            
+            if (repeatModeActive) {
+                // If turning ON, start the Arpeggiator immediately if a pad is pressed
+                if (pressedPad) startArpeggiator();
+            } else {
+                // If turning OFF, stop the Arpeggiator
+                stopArpeggiator();
+            }
+            
             stopAllChords(true);
             pressedPad = null;
             for (let pad of chordPads) { pad.isPressed = false; }
@@ -442,11 +453,12 @@ function touchStarted() {
                 let selectedType = chordTypes[currentChordTypeIndex];
                 
                 if (repeatModeActive) {
+                    // ARPEGGIATOR MODE: Start/switch the arpeggiator on this pad
                     pressedPad = pad;
                     pad.isPressed = true;
-                    stopAllChords(true); 
-                    playChord(pad.number, selectedType);
+                    startArpeggiator(); 
                 } else {
+                    // HOLD MODE: Play full chord
                     stopAllChords(false);
                     playChord(pad.number, selectedType); 
                     pad.isPressed = true;
@@ -473,7 +485,6 @@ function touchStarted() {
 
 function touchMoved() {
     if (sliderGrabbed) {
-        // We need the Y position of the specific input that grabbed the slider
         let ty = getGrabbedY(grabbedTouchID); 
         
         if (ty !== -1) {
@@ -491,7 +502,6 @@ function touchMoved() {
 }
 
 function touchEnded() {
-    // Check if the input that ended was the one controlling the slider
     if (sliderGrabbed) {
         let isGrabbedInputReleased = true;
         
@@ -513,6 +523,9 @@ function touchEnded() {
     
     // Stop sound if a pad was pressed
     if (pressedPad) {
+        if (repeatModeActive) {
+            stopArpeggiator(); // Stop the repeating timer
+        }
         stopAllChords(false); 
         pressedPad.isPressed = false;
         pressedPad = null;
@@ -521,13 +534,10 @@ function touchEnded() {
     return false;
 }
 
-// --- FULLSCREEN FUNCTIONALITY ---
-
 function doubleClicked() {
     let clickX = mouseX;
     let clickY = mouseY;
     
-    // Scale click coordinates before checking controls
     const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
     const inverseScale = 1 / scaleFactor;
     const xOffset = (windowWidth - DESIGN_W * scaleFactor) / 2;
