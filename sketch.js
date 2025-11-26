@@ -1,6 +1,7 @@
 // --- Global Variables ---
-let canvasSizeW = 1920;
-let canvasSizeH = 1080;
+const DESIGN_W = 1920;
+const DESIGN_H = 1080;
+
 let chordPads = [];
 let nashvilleNumbers = ["i", "ii", "iii", "iv", "v", "vi", "vii°"]; 
 let chordTypes = ["Major", "Minor", "7th", "Sus4", "Add9"];
@@ -17,14 +18,14 @@ const KEY_MIDI_OFFSETS = {
 // --- FEATURE/SOUND VARIABLES ---
 let chordOscillators = []; 
 const MAX_VOICES = 4;
-const SYNTH_WAVEFORM = 'triangle';
+const SYNTH_WAVEFORM = 'sawtooth';
 
 // --- SLIDER VARIABLES ---
 let sliderPos = 0.5; 
 let sliderGrabbed = false;
 let grabbedTouchID = -1; 
 
-// --- DRUM/ARPEGGIATOR LOGIC (UPDATED) ---
+// --- DRUM/ARPEGGIATOR LOGIC ---
 let kick, snare;         
 let drumMachineActive = false; 
 let drumLoop = null;     
@@ -40,7 +41,7 @@ let arpStep = 0;
 let arpLoop = null; 
 const ARPEGGIATOR_PATTERNS = { "UP": 0, "DOWN": 1 };
 let currentArpPattern = ARPEGGIATOR_PATTERNS.UP;
-const ARP_INTERVAL_MS = 60000 / BPM / 4; // Use 16th note for speed
+const ARP_INTERVAL_MS = 60000 / BPM / 4; // 16th note interval for arpeggiation
 
 // Defines the intervals and offsets (Unchanged)
 const CHORD_INTERVALS = {
@@ -101,7 +102,6 @@ function setup() {
     snare = new p5.Noise('white'); snare.amp(0); snare.start();
 
     initializeChordPads();
-    // We don't start the repeat checker loop now, it's called by the Arp toggle
 }
 
 function windowResized() {
@@ -163,9 +163,9 @@ function playDrumHit(type) {
     else if (type === 'snare') { snare.amp(0.5, 0.01); snare.amp(0, 0.2); }
 }
 
-// --- ARPEGGIATOR LOGIC (CORRECTED) ---
 
-// Helper to get the MIDI notes for a selected chord (Unchanged)
+// --- ARPEGGIATOR LOGIC (FIXED) ---
+
 function getChordNotes(nashvilleNumber, chordTypeName) {
     let selectedKey = ALL_KEYS[currentKeyIndex];
     let globalKeyOffset = KEY_MIDI_OFFSETS[selectedKey];
@@ -182,11 +182,10 @@ function getChordNotes(nashvilleNumber, chordTypeName) {
     return midiNotes;
 }
 
-// Helper to Play a Single Arp Note (Refined Envelope)
 function playArpNote(noteMidi) {
-    // Stop all oscillators sharply before starting the new note
+    // Stop previous note sharply
     for (let i = 0; i < MAX_VOICES; i++) {
-        chordOscillators[i].amp(0, 0.005); // Very quick stop
+        chordOscillators[i].amp(0, 0.005); 
     }
     
     // Play only the first oscillator (voice) for the single note
@@ -198,19 +197,15 @@ function playArpNote(noteMidi) {
     const holdTime = (ARP_INTERVAL_MS / 1000) * 0.5; // Sustain for half the interval
     const releaseTime = 0.05;
 
-    osc.amp(0.8, attackTime); // Attack
-    osc.amp(0.8, holdTime + attackTime); // Hold
-    osc.amp(0, holdTime + attackTime + releaseTime); // Release
+    osc.amp(0.8, attackTime); 
+    osc.amp(0.8, holdTime + attackTime); 
+    osc.amp(0, holdTime + attackTime + releaseTime); 
 }
 
 function startArpeggiator() {
     if (arpLoop) clearInterval(arpLoop);
-
-    // Stop rhythmic checker if running (to prevent conflict)
-    // The base logic for startRepeatCheckerLoop is removed, so this is just for safety:
-    // if (repeatModeLoop) clearInterval(repeatModeLoop); 
     
-    arpStep = 0; // Reset to the first note
+    arpStep = 0; 
 
     arpLoop = setInterval(() => {
         if (!pressedPad) {
@@ -230,7 +225,6 @@ function startArpeggiator() {
             noteIndex = selectedChord.length - 1 - (arpStep % selectedChord.length);
         }
 
-        // --- CORE FIX: Calling single-note function for arpeggiation ---
         playArpNote(selectedChord[noteIndex]); 
 
         arpStep++;
@@ -262,15 +256,12 @@ function draw() {
     );
     scale(scaleFactor);
     
-    // All drawing happens here at the original design resolution (1920x1080)
     drawHeader();
     drawChordPads(); 
     drawFeaturePads();
     drawSlider();
     
     pop(); 
-
-    // The logic to handle dragging is now entirely in touchMoved()
 }
 
 function drawHeader() {
@@ -440,10 +431,8 @@ function touchStarted() {
             repeatModeActive = !repeatModeActive;
             
             if (repeatModeActive) {
-                // If turning ON, start the Arpeggiator immediately if a pad is pressed
                 if (pressedPad) startArpeggiator();
             } else {
-                // If turning OFF, stop the Arpeggiator
                 stopArpeggiator();
             }
             
@@ -532,7 +521,7 @@ function touchEnded() {
     // Stop sound if a pad was pressed
     if (pressedPad) {
         if (repeatModeActive) {
-            stopArpeggiator(); // Stop the repeating timer
+            stopArpeggiator(); 
         }
         stopAllChords(false); 
         pressedPad.isPressed = false;
