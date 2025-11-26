@@ -17,7 +17,7 @@ const KEY_MIDI_OFFSETS = {
 // --- FEATURE/SOUND VARIABLES ---
 let chordOscillators = []; 
 const MAX_VOICES = 4;
-const SYNTH_WAVEFORM = 'sawtooth';
+const SYNTH_WAVEFORM = 'triangle';
 
 // --- SLIDER VARIABLES ---
 let sliderPos = 0.5; 
