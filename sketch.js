@@ -66,23 +66,25 @@ function setup() {
 function setupSynth() {
   osc = new p5.Oscillator('sawtooth');
   
-  // TB-303 "Liquid" Filter Settings
+  // TB-303 "Twang" Filter Settings
   filter = new p5.LowPass();
-  filter.res(18); // High resonance for that "chirpy" liquid sound
+  // Reduced resonance slightly to remove the "rubber" feeling
+  filter.res(14); 
   
-  // Distortion (Subtle saturation)
-  dist = new p5.Distortion(0.05, 'none'); 
+  // Increased Distortion for more grit/texture
+  dist = new p5.Distortion(0.12, 'none'); 
 
-  // Volume Envelope - Tight and punchy
+  // Volume Envelope - Longer release for the tail
   ampEnv = new p5.Envelope();
-  ampEnv.setADSR(0.001, 0.1, 0.0, 0.1); 
-  ampEnv.setRange(0.7, 0); 
+  ampEnv.setADSR(0.005, 0.2, 0.0, 0.2); 
+  ampEnv.setRange(0.8, 0); 
 
-  // Filter Envelope - The "Zap"
+  // Filter Envelope - The "Twang"
   filterEnv = new p5.Envelope();
-  filterEnv.setADSR(0.001, 0.15, 0.0, 0.1); // Faster decay = more squelch
-  // Sweep range: Opens wider (1500Hz) to bite, then clamps down to sub (60Hz)
-  filterEnv.setRange(1500, 60); 
+  // Longer decay (0.3) allows the sweep to be heard as a "twang" rather than a click
+  filterEnv.setADSR(0.001, 0.3, 0.0, 0.2); 
+  // Wider range: Starts higher (2000Hz) for bite, sweeps down to 80Hz
+  filterEnv.setRange(2000, 80); 
   
   filter.freq(filterEnv);
 
