@@ -1,501 +1,300 @@
-// --- Global Constants and Design Setup ---
-const DESIGN_W = 1920;
-const DESIGN_H = 1080;
+// --- Configuration ---
+const GRID_COLS = 16;
+const GRID_ROWS = 13; // C to C (one octave)
+const CELL_SIZE = 40;
+const HEADER_WIDTH = 60; // Space for note labels
+const CANVAS_WIDTH = HEADER_WIDTH + (GRID_COLS * CELL_SIZE);
+const CANVAS_HEIGHT = GRID_ROWS * CELL_SIZE;
 
-// --- SEQUENCER STATE ---
-const STEP_COUNT = 16;
-const PITCH_ROWS = 13; // Chromatic octave (C to B)
-const BASE_MIDI = 48; // C3
-let sequence = []; // 2D Array: sequence[step][pitch_index] = boolean
-let currentStep = 0;
+// Note names for labels (Top to Bottom: High C to Low C)
+const NOTE_LABELS = ['C (Hi)', 'B', 'A#', 'A', 'G#', 'G', 'F#', 'F', 'E', 'D#', 'D', 'C#', 'C (Lo)'];
+// MIDI note numbers corresponding to rows (Top to Bottom)
+// 72 is C5, 60 is C4
+const NOTE_MIDI = [72, 71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60];
+
+// --- State ---
+let grid = []; // 2D array [col][row] boolean
 let isPlaying = false;
-const BPM = 120;
+let currentStep = 0;
+let nextStepTime = 0;
+let stepInterval = 0; // calculated from tempo
 
-// Synth Components
-let monoOsc; 
-let currentWaveform = 'sawtooth'; 
+// Synth components
+let osc;
+let ampEnv;
+let filter;
+let isAudioStarted = false;
 
-// Scheduler Variables (CLEANED)
-let synthPart;
-let pattern; 
-
-// Slider States (Normalized 0.0 to 1.0)
-let portamentoSliderPos = 0.0;
-let transposeSliderPos = 0.5; 
-let waveformSliderPos = 0.0;  
-
-// Transpose Range: -12 to +12 semitones
-const TRANSPOSE_RANGE = 12;
-const PORTAMENTO_MAX_MS = 200;
-
-// UI Layout Constants
-const BG_COLOR = [0, 80, 160]; 
-const ACCENT_COLOR = [255, 120, 0]; 
-const GRID_DOT_COLOR = [0, 60, 120];
-const STEP_ON_COLOR = [40, 40, 55]; 
-const CONTROL_COLOR = [90, 90, 110];
-const STEP_ACTIVE_COLOR = [255, 255, 100]; 
-
-// Grid Layout
-const GRID_START_Y = 200;
-const GRID_START_X = 150;
-const CELL_SIZE_W = 100; 
-const CELL_SIZE_H = 60;  
-const LABEL_W = 50;     
-
-// Slider Layout
-const SLIDER_Y = 900; 
-const SLIDER_W = 400;
-const SLIDER_H = 20;
-const SLIDER_KNOB_R = 25;
-const SLIDER_GAP = 50;
-
-// Transport Button Layout
-const BUTTON_Y = 50;
-const BUTTON_W = 180;
-const BUTTON_H = 60;
-const BUTTON_GAP = 20;
-const BUTTON_START_X = 1300;
-
-// Touch/Interaction State
-let sliderGrabbedID = -1; 
-let grabbedTouchID = -2; 
-const PITCH_LABELS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C"]; 
-
-
-// --- PRELOAD/SETUP/INIT FUNCTIONS ---
-function preload() {}
+// DOM Elements
+let btnToggle, btnClear, btnRandom;
+let sldWave, sldPort, sldTrans, sldTempo;
 
 function setup() {
-    createCanvas(windowWidth, windowHeight); 
-    noStroke();
-    userStartAudio(); 
-    
-    // Initialize Monosynth
-    monoOsc = new p5.Oscillator(currentWaveform); 
-    monoOsc.amp(0);
-    monoOsc.start();
-    
-    initializeSequence();
-    setupSequencer(); 
-}
-
-function windowResized() {
-    resizeCanvas(windowWidth, windowHeight);
-}
-
-function initializeSequence() {
-    sequence = Array(STEP_COUNT).fill(0).map(() => Array(PITCH_ROWS).fill(false));
-}
-
-function clearSequence() {
-    initializeSequence();
-}
-
-function randomizeSequence() {
-    for(let step = 0; step < STEP_COUNT; step++) {
-        for(let pitch = 0; pitch < PITCH_ROWS; pitch++) {
-            sequence[step][pitch] = (random() < 0.1); 
-        }
+  // Create Canvas
+  // Note: In a standalone sketch.js, you might not need .parent('canvas-container') 
+  // if you don't have that div in your HTML.
+  let cnv = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+  
+  // Try to attach to parent if it exists, otherwise just append to body
+  try {
+    cnv.parent('canvas-container');
+  } catch (e) {
+    console.log("Container not found, appending to body");
+  }
+  
+  // Initialize Grid (Cols x Rows)
+  for (let c = 0; c < GRID_COLS; c++) {
+    let col = [];
+    for (let r = 0; r < GRID_ROWS; r++) {
+      col.push(false);
     }
+    grid.push(col);
+  }
+
+  // Initialize DOM references
+  // Note: These IDs must exist in your HTML file for this to work
+  btnToggle = select('#btn-toggle');
+  btnClear = select('#btn-clear');
+  btnRandom = select('#btn-random');
+  sldWave = select('#slider-wave');
+  sldPort = select('#slider-portamento');
+  sldTrans = select('#slider-transpose');
+  sldTempo = select('#slider-tempo');
+
+  // Attach Listeners if elements exist
+  if(btnToggle) btnToggle.mousePressed(togglePlay);
+  if(btnClear) btnClear.mousePressed(clearGrid);
+  if(btnRandom) btnRandom.mousePressed(randomizeGrid);
+  
+  // Setup Audio (suspended initially)
+  userStartAudio().then(() => {
+    // Audio setup happens on first interaction usually, but we prep here
+  });
+  
+  setupSynth();
 }
 
-// FIX: SCHEDULER SETUP IS THE ONLY TIMING SOURCE
-function setupSequencer() {
-    // 1. Create a pattern array from 0 to 15
-    pattern = Array(STEP_COUNT).fill(0).map((_, i) => i);
-    
-    // 2. The callback function for each 16th note step
-    function sequenceStep(time, stepIndex) {
-        // Update the visual indicator safely
-        currentStep = stepIndex;
-        
-        // Find the note to play
-        playStep(stepIndex);
-        // Request a redraw to update the UI visuals
-        if (isPlaying) redraw(); 
-    }
-    
-    // 3. Create the Phrase object
-    let synthPhrase = new p5.Phrase('synth-phrase', sequenceStep, pattern);
-    
-    // 4. Create the Part object (The master transport)
-    synthPart = new p5.Part();
-    synthPart.addPhrase(synthPhrase);
-    
-    synthPart.setBPM(BPM);
-    // Set the part to loop once every 16 steps (one bar in 4/4)
-    synthPart.setLoop(0, '16n'); 
+function setupSynth() {
+  osc = new p5.Oscillator('sawtooth');
+  
+  // Filter to simulate the subtractive synth sound
+  filter = new p5.LowPass();
+  filter.freq(800);
+  filter.res(5); // Some resonance for that "acid" squelch
+  
+  // Envelope for the VCA (Volume)
+  ampEnv = new p5.Envelope();
+  ampEnv.setADSR(0.01, 0.1, 0.1, 0.1); // Fast attack, short decay
+  ampEnv.setRange(0.5, 0);
+
+  osc.disconnect();
+  osc.connect(filter);
+  
+  // We'll control volume via the envelope directly or a gain node.
+  // p5.Oscillator amplitude is controlled by the env
+  osc.amp(ampEnv);
+  osc.start();
+  osc.amp(0); // Silent start
 }
-
-
-// --- SEQUENCER AND AUDIO LOGIC ---
-
-function playStep(step) {
-    let activeNotes = [];
-    
-    for (let pitchIndex = 0; pitchIndex < PITCH_ROWS; pitchIndex++) {
-        if (sequence[step][pitchIndex]) {
-            let midiNoteOffset = (PITCH_ROWS - 1) - pitchIndex;
-            activeNotes.push(BASE_MIDI + midiNoteOffset); 
-        }
-    }
-
-    let transposeShift = floor(map(transposeSliderPos, 0, 1, -TRANSPOSE_RANGE, TRANSPOSE_RANGE));
-    let portamentoTime = map(portamentoSliderPos, 0, 1, 0, PORTAMENTO_MAX_MS) / 1000;
-    
-    monoOsc.amp(0, 0.01);
-
-    if (activeNotes.length > 0) {
-        let noteMidi = activeNotes[activeNotes.length - 1] + transposeShift;
-        let freq = midiToFreq(noteMidi);
-        
-        monoOsc.freq(freq, portamentoTime); 
-        monoOsc.amp(0.6, 0.05);
-    } else {
-        monoOsc.amp(0, 0.1);
-    }
-}
-
-
-// --- DRAWING FUNCTIONS ---
 
 function draw() {
-    background(BG_COLOR); 
-    
-    // Apply responsive scaling based on 1920x1080 design resolution
-    const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
-    
-    push(); 
-    translate((windowWidth - DESIGN_W * scaleFactor) / 2, (windowHeight - DESIGN_H * scaleFactor) / 2);
-    scale(scaleFactor);
-    
-    drawHeader();
-    drawTransportButtons();
-    drawSequencerGrid(); 
-    drawSliders();
-    
-    pop(); 
-}
+  background('#0070dd'); // The classic Roland blue
 
-function drawHeader() {
-    fill(255);
-    textSize(60);
-    textAlign(LEFT, TOP);
-    text("DS-02", 50, 40);
-    textSize(30);
-    fill(ACCENT_COLOR); 
-    text("MONOSYNTH SEQUENCER", 50, 100);
-
-    // Status Display
-    fill(255);
-    textSize(30);
-    let transpose = floor(map(transposeSliderPos, 0, 1, -TRANSPOSE_RANGE, TRANSPOSE_RANGE));
-    let waveformName = waveformSliderPos < 0.5 ? 'SAWTOOTH' : 'SQUARE';
-    text(`BPM: ${BPM} | Transpose: ${transpose} | Wave: ${waveformName}`, 50, 180);
-    
-    // SH-101 Text (Bottom Right Corner)
-    fill(255);
-    textSize(40);
-    textAlign(RIGHT, BOTTOM);
-    text("SH-101", DESIGN_W - 50, DESIGN_H - 40);
-}
-
-function drawTransportButtons() {
-    let x = BUTTON_START_X;
-
-    // Start/Stop Button
-    let playColor = isPlaying ? [255, 0, 0] : [0, 200, 0];
-    drawButton(x, BUTTON_Y, BUTTON_W, BUTTON_H, playColor, isPlaying ? "STOP" : "START");
-    x += BUTTON_W + BUTTON_GAP;
-
-    // Clear Button
-    drawButton(x, BUTTON_Y, BUTTON_W, BUTTON_H, CONTROL_COLOR, "CLEAR");
-    x += BUTTON_W + BUTTON_GAP;
-
-    // Random Button
-    drawButton(x, BUTTON_Y, BUTTON_W, BUTTON_H, CONTROL_COLOR, "RANDOM");
-}
-
-function drawSequencerGrid() {
-    let gridX = GRID_START_X + LABEL_W;
-    let gridY = GRID_START_Y;
-    
-    // Draw Pitch Labels (Vertical Axis)
-    fill(255);
-    textSize(24);
-    textAlign(RIGHT, CENTER);
-    for (let pitch = 0; pitch < PITCH_ROWS; pitch++) {
-        let labelIndex = (PITCH_ROWS - 1) - pitch; 
-        let noteLabel = PITCH_LABELS[labelIndex % 12]; 
-        text(noteLabel, GRID_START_X + LABEL_W - 5, gridY + pitch * CELL_SIZE_H + CELL_SIZE_H / 2);
+  // Draw Grid
+  drawGrid();
+  
+  // Playhead Logic
+  if (isPlaying) {
+    let now = millis();
+    if (now >= nextStepTime) {
+      playStep();
+      // Calculate next step time based on tempo (BPM)
+      // 16th notes: (60 / BPM) * 1000 / 4
+      let bpm = sldTempo ? sldTempo.value() : 120;
+      let stepDur = (60 / bpm) * 1000 / 4;
+      nextStepTime = now + stepDur;
     }
+  }
+}
+
+function drawGrid() {
+  noStroke();
+  
+  // 1. Draw Labels background
+  fill(255);
+  rect(0, 0, HEADER_WIDTH, height);
+
+  // 2. Draw Labels and Grid lines
+  textAlign(CENTER, CENTER);
+  textSize(10);
+  
+  for (let r = 0; r < GRID_ROWS; r++) {
+    let y = r * CELL_SIZE;
     
-    // Draw Steps (Horizontal Axis)
-    for (let step = 0; step < STEP_COUNT; step++) {
-        let cellX = gridX + step * CELL_SIZE_W;
-
-        // Highlight active step column
-        if (isPlaying && step === currentStep) {
-            fill(STEP_ACTIVE_COLOR);
-            rect(cellX, gridY, CELL_SIZE_W, PITCH_ROWS * CELL_SIZE_H);
-        }
-
-        for (let pitch = 0; pitch < PITCH_ROWS; pitch++) {
-            let cellY = gridY + pitch * CELL_SIZE_H;
-            
-            // Draw Cell Background (Main grid area)
-            fill(BG_COLOR);
-            rect(cellX, cellY, CELL_SIZE_W, CELL_SIZE_H);
-
-            // Draw Grid Dot
-            fill(GRID_DOT_COLOR);
-            ellipse(cellX + CELL_SIZE_W / 2, cellY + CELL_SIZE_H / 2, 5, 5);
-
-            // Draw Active Note (Black Square)
-            if (sequence[step][pitch]) {
-                fill(STEP_ON_COLOR);
-                rect(cellX + 25, cellY + 15, CELL_SIZE_W - 50, CELL_SIZE_H - 30); 
-            }
-        }
-        
-        // Step number label at bottom
-        fill(255);
-        textSize(18);
-        textAlign(CENTER, BOTTOM);
-        text(step + 1, gridX + step * CELL_SIZE_W + CELL_SIZE_W / 2, gridY + PITCH_ROWS * CELL_SIZE_H + 5);
-    }
-}
-
-function drawSliders() {
-    let x = PAD_START_X;
+    // Draw Label
+    fill(0);
+    text(NOTE_LABELS[r], HEADER_WIDTH / 2, y + CELL_SIZE/2);
     
-    // Portamento Slider
-    drawSliderControl(x, SLIDER_Y, "PORTAMENTO", portamentoSliderPos, 0, 1, 0, PORTAMENTO_MAX_MS, 0);
-    x += SLIDER_W + SLIDER_GAP;
+    // Draw Row Lines (subtle)
+    stroke(0, 50);
+    line(HEADER_WIDTH, y, width, y);
+  }
+
+  // 3. Draw Columns and Notes
+  for (let c = 0; c < GRID_COLS; c++) {
+    let x = HEADER_WIDTH + (c * CELL_SIZE);
     
-    // Transpose Slider
-    drawSliderControl(x, SLIDER_Y, "TRANSPOSE", transposeSliderPos, 0, 1, -TRANSPOSE_RANGE, TRANSPOSE_RANGE, 1);
-    x += SLIDER_W + SLIDER_GAP;
+    // Highlight active column (Playhead)
+    if (isPlaying && c === currentStep) {
+      fill(255, 255, 255, 50);
+      noStroke();
+      rect(x, 0, CELL_SIZE, height);
+    }
+
+    for (let r = 0; r < GRID_ROWS; r++) {
+      let y = r * CELL_SIZE;
+      let cx = x + CELL_SIZE/2;
+      let cy = y + CELL_SIZE/2;
+
+      // Draw the "empty" dot (like the SH-101 graphic)
+      noStroke();
+      fill(0);
+      if (grid[c][r]) {
+        // Active Note: Large Square
+        rectMode(CENTER);
+        rect(cx, cy, CELL_SIZE * 0.7, CELL_SIZE * 0.7);
+        rectMode(CORNER);
+      } else {
+        // Inactive: Small Dot
+        ellipse(cx, cy, 4, 4);
+      }
+    }
+  }
+}
+
+function playStep() {
+  // Find active note in current column
+  let activeRow = -1;
+  for (let r = 0; r < GRID_ROWS; r++) {
+    if (grid[currentStep][r]) {
+      activeRow = r;
+      break;
+    }
+  }
+
+  if (activeRow !== -1 && isAudioStarted) {
+    triggerNote(activeRow);
+  }
+
+  // Advance step
+  currentStep = (currentStep + 1) % GRID_COLS;
+}
+
+function triggerNote(rowIndex) {
+  // Calculate Frequency
+  let baseMidi = NOTE_MIDI[rowIndex];
+  // Default values if sliders are missing
+  let transpose = sldTrans ? int(sldTrans.value()) : 0;
+  let finalMidi = baseMidi + transpose;
+  let freq = midiToFreq(finalMidi);
+
+  // Update Waveform
+  let waveVal = sldWave ? sldWave.value() : 0;
+  let waveType = waveVal == 0 ? 'sawtooth' : 'square';
+  osc.setType(waveType);
+
+  // Portamento
+  let portTime = sldPort ? parseFloat(sldPort.value()) : 0.05;
+  osc.freq(freq, portTime);
+
+  // Trigger Envelope
+  ampEnv.play();
+}
+
+function mousePressed() {
+  // Check if inside Grid area
+  if (mouseX > HEADER_WIDTH && mouseX < width && mouseY > 0 && mouseY < height) {
     
-    // Waveform Slider
-    drawSliderControl(x, SLIDER_Y, "WAVEFORM", waveformSliderPos, 0, 1, 0, 1, 2);
-}
-
-// Helper function to draw a single slider control
-function drawSliderControl(x, y, label, pos, minVal, maxVal, displayMin, displayMax, id) {
-    let knobX = x + map(pos, 0, 1, 0, SLIDER_W);
-
-    // Label
-    fill(255);
-    textSize(30);
-    textAlign(LEFT, CENTER);
-    text(label, x, y - 50);
-
-    // Value Display
-    let displayValue;
-    if (label === "WAVEFORM") {
-        displayValue = pos < 0.5 ? "SAW" : "SQUARE";
-    } else if (label === "TRANSPOSE") {
-        displayValue = floor(map(pos, 0, 1, displayMin, displayMax));
-    } else {
-        displayValue = round(map(pos, 0, 1, displayMin, displayMax));
-    }
-    fill(ACCENT_COLOR);
-    textSize(24);
-    textAlign(RIGHT, CENTER);
-    text(displayValue, x + SLIDER_W, y - 50);
-
-    // Track
-    fill(CONTROL_COLOR);
-    rect(x, y, SLIDER_W, SLIDER_H, 10);
-
-    // Knob
-    fill(ACCENT_COLOR);
-    ellipse(knobX, y + SLIDER_H / 2, SLIDER_KNOB_R * 2);
-}
-
-function drawButton(x, y, w, h, color, label) {
-    fill(color);
-    rect(x, y, w, h, 10);
-    fill(255);
-    textSize(30);
-    textAlign(CENTER, CENTER);
-    text(label, x + w / 2, y + h / 2);
-}
-
-
-// --- INTERACTION LOGIC ---
-
-function mapTouchToDesign(x, y) {
-    const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
-    const inverseScale = 1 / scaleFactor;
-    const xOffset = (windowWidth - DESIGN_W * scaleFactor) / 2;
-    const yOffset = (windowHeight - DESIGN_H * scaleFactor) / 2;
+    // Calculate grid coordinates
+    let c = floor((mouseX - HEADER_WIDTH) / CELL_SIZE);
+    let r = floor(mouseY / CELL_SIZE);
     
-    return { x: (x - xOffset) * inverseScale, y: (y - yOffset) * inverseScale };
-}
+    if (c >= 0 && c < GRID_COLS && r >= 0 && r < GRID_ROWS) {
+      // Toggle note
+      // Logic: Monophonic per step? 
+      // If we click an empty cell, turn it on and turn off others in that col.
+      // If we click an active cell, turn it off.
+      
+      let wasActive = grid[c][r];
+      
+      // Clear column first (Monophonic Step)
+      for(let i=0; i<GRID_ROWS; i++) {
+        grid[c][i] = false;
+      }
 
-function isOverButton(x, y, btnX, btnY, btnW, btnH) {
-    return x > btnX && x < btnX + btnW && y > btnY && y < btnY + btnH;
-}
-
-function getSliderBounds(id) {
-    let x = PAD_START_X;
-    let w = SLIDER_W;
-    let gap = SLIDER_W + SLIDER_GAP;
-    if (id === 1) x += gap;
-    if (id === 2) x += 2 * gap;
-    return { x: x, y: SLIDER_Y, w: w, h: SLIDER_H };
-}
-
-function updateSliderValue(id, x) {
-    let bounds = getSliderBounds(id);
-    let newX = constrain(x, bounds.x, bounds.x + bounds.w);
-    let newPos = map(newX, bounds.x, bounds.x + bounds.w, 0, 1);
-
-    if (id === 0) {
-        portamentoSliderPos = newPos;
-    } else if (id === 1) {
-        transposeSliderPos = newPos;
-    } else if (id === 2) {
-        waveformSliderPos = newPos;
-        let newWaveform = waveformSliderPos < 0.5 ? 'sawtooth' : 'square';
-        if (newWaveform !== monoOsc.getType()) {
-            monoOsc.setType(newWaveform);
+      // If it wasn't active, set it to active now
+      if (!wasActive) {
+        grid[c][r] = true;
+        
+        // Preview sound
+        if (!isPlaying && isAudioStarted) {
+           // Quick preview
+           let baseMidi = NOTE_MIDI[r];
+           let transpose = sldTrans ? int(sldTrans.value()) : 0;
+           let freq = midiToFreq(baseMidi + transpose);
+           
+           let waveVal = sldWave ? sldWave.value() : 0;
+           let waveType = waveVal == 0 ? 'sawtooth' : 'square';
+           osc.setType(waveType);
+           osc.freq(freq);
+           ampEnv.play();
         }
+      }
     }
+  }
 }
 
+function togglePlay() {
+  // Ensure audio context is running
+  if (getAudioContext().state !== 'running') {
+    getAudioContext().resume();
+  }
+  isAudioStarted = true;
 
-function touchStarted() {
-    userStartAudio(); 
-
-    let inputSource = touches.length > 0 ? touches : [{x: mouseX, y: mouseY, id: -2}];
-    
-    for (let input of inputSource) {
-        let design = mapTouchToDesign(input.x, input.y);
-        let tx = design.x;
-        let ty = design.y;
-        let id = input.id;
-        
-        // 1. Check Transport Buttons
-        let x = BUTTON_START_X;
-        
-        // Start/Stop Button
-        if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
-            isPlaying = !isPlaying;
-            if (isPlaying) {
-                // Use scheduler transport
-                synthPart.start(); 
-            } else {
-                synthPart.stop(); 
-                monoOsc.amp(0, 0.2); 
-                currentStep = 0; // Reset visual step indicator
-            }
-            redraw();
-            return false;
-        }
-        x += BUTTON_W + BUTTON_GAP;
-
-        // Clear Button
-        if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
-            clearSequence();
-            synthPart.stop();
-            isPlaying = false;
-            currentStep = 0;
-            monoOsc.amp(0, 0.2);
-            redraw();
-            return false;
-        }
-        x += BUTTON_W + BUTTON_GAP;
-
-        // Random Button
-        if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
-            randomizeSequence();
-            redraw();
-            return false;
-        }
-
-        // 2. Check Sliders for Grabbing
-        for (let i = 0; i < 3; i++) {
-            let bounds = getSliderBounds(i);
-            let knobX = bounds.x + map(i === 0 ? portamentoSliderPos : (i === 1 ? transposeSliderPos : waveformSliderPos), 0, 1, 0, SLIDER_W);
-
-            if (dist(tx, ty, knobX, bounds.y + bounds.h / 2) < SLIDER_KNOB_R * 1.5 || isOverButton(tx, ty, bounds.x, bounds.y, bounds.w, bounds.h)) {
-                sliderGrabbedID = i;
-                grabbedTouchID = id; 
-                return false; 
-            }
-        }
-        
-        // 3. Check Sequencer Grid Interaction
-        let gridX = GRID_START_X + LABEL_W;
-        let gridY = GRID_START_Y;
-        
-        if (tx > gridX && tx < gridX + STEP_COUNT * CELL_SIZE_W && ty > gridY && ty < gridY + PITCH_ROWS * CELL_SIZE_H) {
-            let step = floor((tx - gridX) / CELL_SIZE_W);
-            let pitch = floor((ty - gridY) / CELL_SIZE_H);
-            
-            // Toggle the state of the cell
-            sequence[step][pitch] = !sequence[step][pitch];
-            redraw();
-            return false;
-        }
+  isPlaying = !isPlaying;
+  
+  if (isPlaying) {
+    currentStep = 0;
+    nextStepTime = millis();
+    if(btnToggle) {
+        btnToggle.html("Stop");
+        btnToggle.addClass('active');
     }
-}
-
-function touchMoved() {
-    if (sliderGrabbedID !== -1) {
-        let inputX;
-
-        if (grabbedTouchID === -2) { // Mouse input
-            inputX = mouseX;
-        } else {
-            let activeTouch = touches.find(t => t.id === grabbedTouchID);
-            if (!activeTouch) return; 
-            inputX = activeTouch.x;
-        }
-
-        let design = mapTouchToDesign(inputX, 0); 
-        
-        updateSliderValue(sliderGrabbedID, design.x); 
-        redraw();
-        return false;
+  } else {
+    if(btnToggle) {
+        btnToggle.html("Start");
+        btnToggle.removeClass('active');
     }
+    // Silence
+    osc.amp(0, 0.1);
+  }
 }
 
-function touchEnded() {
-    if (sliderGrabbedID !== -1) {
-        let isGrabbedInputReleased = true;
-        
-        if (touches.length > 0 && grabbedTouchID !== -2) {
-            isGrabbedInputReleased = false;
-            for (let t of touches) {
-                if (t.id === grabbedTouchID) {
-                    isGrabbedInputReleased = false;
-                    break;
-                }
-            }
-        }
-
-        if (isGrabbedInputReleased) {
-            sliderGrabbedID = -1;
-            grabbedTouchID = -2;
-            return false;
-        }
+function clearGrid() {
+  for (let c = 0; c < GRID_COLS; c++) {
+    for (let r = 0; r < GRID_ROWS; r++) {
+      grid[c][r] = false;
     }
-    return false;
+  }
 }
 
-function doubleClicked() {
-    return false; 
-}
-
-// Utility to convert MIDI to Note (for display)
-function midiToNote(midi) {
-    const noteNames = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"];
-    let octave = floor(midi / 12) - 1;
-    let note = noteNames[midi % 12];
-    return `${note}`;
+function randomizeGrid() {
+  clearGrid();
+  for (let c = 0; c < GRID_COLS; c++) {
+    // 50% chance a step has a note
+    if (random() > 0.3) {
+      let r = floor(random(GRID_ROWS));
+      grid[c][r] = true;
+    }
+  }
 }
