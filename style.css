@@ -1,6 +1,6 @@
 body {
   margin: 0;
-  padding: 0;
+  padding: 20px 0; /* Added padding to give top/bottom space */
   background-color: #222;
   color: #eee;
   font-family: 'Courier New', Courier, monospace;
@@ -9,7 +9,7 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  overflow: hidden;
+  overflow-y: auto; /* Changed to auto to allow scrolling */
 }
 
 #canvas-container {
@@ -17,6 +17,7 @@ body {
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 20px;
+  flex-shrink: 0; /* Prevents canvas from squishing */
 }
 
 .controls {
@@ -29,6 +30,7 @@ body {
   width: 800px; /* Matches the canvas width roughly */
   box-sizing: border-box;
   border: 1px solid #444;
+  flex-shrink: 0; /* Prevents controls from squishing */
 }
 
 .control-group {
