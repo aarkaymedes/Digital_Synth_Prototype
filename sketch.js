@@ -134,6 +134,7 @@ function playStep(step) {
 function startSequencerLoop() {
     if (seqLoop) clearInterval(seqLoop);
 
+    // This structure passes a direct function reference, avoiding the 'eval' error.
     seqLoop = setInterval(function() {
         if (isPlaying) {
             playStep(currentStep);
