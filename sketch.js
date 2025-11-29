@@ -25,12 +25,13 @@ let arpIndex = 0;
 const ARP_PATTERN = [0, 3, 7, 10, 12, 10, 7, 3]; 
 
 // Synth components
-let osc, ampEnv, filter, filterEnv, dist; // Added dist
+let osc, ampEnv, filter, filterEnv, dist; 
 let isAudioStarted = false;
 
 // DOM Elements
 let btnToggle, btnClear, btnRandom, btnArp; 
-let sldWave, sldPort, sldTrans, sldTempo;
+// NEW SLIDER VARIABLES
+let sldWave, sldCutoff, sldDecay, sldRes, sldTempo;
 
 function setup() {
   let cnv = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -48,9 +49,12 @@ function setup() {
   btnClear = select('#btn-clear');
   btnRandom = select('#btn-random');
   btnArp = select('#btn-arp'); 
+  
+  // Map new sliders
   sldWave = select('#slider-wave');
-  sldPort = select('#slider-portamento');
-  sldTrans = select('#slider-transpose');
+  sldCutoff = select('#slider-cutoff'); // New
+  sldDecay = select('#slider-decay');   // New
+  sldRes = select('#slider-resonance'); // New
   sldTempo = select('#slider-tempo');
 
   // Listeners
@@ -66,24 +70,19 @@ function setup() {
 function setupSynth() {
   osc = new p5.Oscillator('sawtooth');
   
-  // TB-303 "Twang" Filter Settings
   filter = new p5.LowPass();
-  // Reduced resonance slightly to remove the "rubber" feeling
-  filter.res(14); 
+  filter.res(14); // Default, controlled by slider later
   
-  // Increased Distortion for more grit/texture
   dist = new p5.Distortion(0.12, 'none'); 
 
-  // Volume Envelope - Longer release for the tail
+  // Volume Envelope 
   ampEnv = new p5.Envelope();
   ampEnv.setADSR(0.005, 0.2, 0.0, 0.2); 
   ampEnv.setRange(0.8, 0); 
 
-  // Filter Envelope - The "Twang"
+  // Filter Envelope 
   filterEnv = new p5.Envelope();
-  // Longer decay (0.3) allows the sweep to be heard as a "twang" rather than a click
   filterEnv.setADSR(0.001, 0.3, 0.0, 0.2); 
-  // Wider range: Starts higher (2000Hz) for bite, sweeps down to 80Hz
   filterEnv.setRange(2000, 80); 
   
   filter.freq(filterEnv);
@@ -134,7 +133,6 @@ function drawGrid() {
     let x = HEADER_WIDTH + (c * CELL_SIZE);
     
     if (isPlaying && c === currentStep) {
-      // Orange highlight if Arp is active, otherwise white
       if(isArpActive) fill(255, 165, 0, 80); 
       else fill(255, 255, 255, 50);
       noStroke();
@@ -172,25 +170,20 @@ function playStep() {
 
   // 2. Play Audio Logic
   if (activeRow !== -1) {
-    // We found a note on the grid!
     let baseMidi = NOTE_MIDI[activeRow];
-    let transpose = sldTrans ? int(sldTrans.value()) : 0;
+    let transpose = 0; // Removed slider, defaulting to 0
 
     if (isArpActive) {
       // --- ARPEGGIATOR MODE ---
-      // Use the grid note as the root + add the arpeggio interval
       let interval = ARP_PATTERN[arpIndex % ARP_PATTERN.length];
       let noteMidi = baseMidi + transpose + interval;
       triggerSynth(midiToFreq(noteMidi));
       arpIndex++; 
     } else {
       // --- NORMAL MODE ---
-      // Just play the note
       triggerSynth(midiToFreq(baseMidi + transpose));
     }
   } else {
-    // No note on grid -> Play nothing (Silence)
-    // If you want the Arp pattern to "keep counting" even during silence, keep this:
     if (isArpActive) arpIndex++;
   }
 
@@ -200,10 +193,28 @@ function playStep() {
 function triggerSynth(freq) {
     let waveVal = sldWave ? sldWave.value() : 0;
     osc.setType(waveVal == 0 ? 'sawtooth' : 'square');
-    let portTime = sldPort ? parseFloat(sldPort.value()) : 0.05;
+    
+    // Fixed glide (since slider is gone)
+    let portTime = 0.05; 
     osc.freq(freq, portTime);
     
-    // Trigger both envelopes
+    // --- Update Filter Params from Sliders ---
+    
+    // 1. Resonance
+    let resVal = sldRes ? parseFloat(sldRes.value()) : 14;
+    filter.res(resVal);
+
+    // 2. Decay (Updates the release time of the filter envelope)
+    // We adjust the 'Release' part of ADSR. Attack is kept fast.
+    let decayVal = sldDecay ? parseFloat(sldDecay.value()) : 0.3;
+    filterEnv.setADSR(0.001, decayVal, 0.0, 0.2);
+
+    // 3. Cutoff (Updates the range of the filter sweep)
+    // Range goes from [Slider Value] down to 60Hz
+    let cutoffVal = sldCutoff ? parseFloat(sldCutoff.value()) : 2000;
+    filterEnv.setRange(cutoffVal, 60);
+
+    // Trigger envelopes
     ampEnv.play();
     filterEnv.play();
 }
@@ -219,11 +230,10 @@ function mousePressed() {
 
       if (!wasActive) {
         grid[c][r] = true;
-        // Preview note only if not playing
         if (!isPlaying && isAudioStarted && !isArpActive) {
            let baseMidi = NOTE_MIDI[r];
-           let transpose = sldTrans ? int(sldTrans.value()) : 0;
-           triggerSynth(midiToFreq(baseMidi + transpose));
+           // Transpose removed
+           triggerSynth(midiToFreq(baseMidi));
         }
       }
     }
