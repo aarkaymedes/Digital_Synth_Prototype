@@ -24,7 +24,7 @@ let arpIndex = 0;
 const ARP_PATTERN = [0, 3, 7, 10, 12, 10, 7, 3]; 
 
 // Synth components
-let osc, ampEnv, filter;
+let osc, ampEnv, filter, filterEnv; // Added filterEnv
 let isAudioStarted = false;
 
 // DOM Elements
@@ -64,14 +64,28 @@ function setup() {
 
 function setupSynth() {
   osc = new p5.Oscillator('sawtooth');
+  
+  // TB-303 Style Filter: Low Pass with High Resonance
   filter = new p5.LowPass();
-  filter.freq(800);
-  filter.res(5); 
+  filter.res(15); // High resonance for the "acid" squelch
+  
+  // Volume Envelope (Punchy, short decay)
   ampEnv = new p5.Envelope();
-  ampEnv.setADSR(0.01, 0.1, 0.1, 0.1); 
+  ampEnv.setADSR(0.005, 0.1, 0.0, 0.1); 
   ampEnv.setRange(0.5, 0);
+
+  // Filter Envelope (The "Wow" sound)
+  // This sweeps the filter frequency down with every note
+  filterEnv = new p5.Envelope();
+  filterEnv.setADSR(0.005, 0.2, 0.0, 0.2); // Fast attack, decay controls the "wow" length
+  filterEnv.setRange(3000, 300); // Sweep from 3000Hz down to 300Hz
+  
+  // Connect the envelope to the filter's frequency parameter
+  filter.freq(filterEnv);
+
   osc.disconnect();
   osc.connect(filter);
+  
   osc.amp(ampEnv);
   osc.start();
   osc.amp(0); 
@@ -180,7 +194,10 @@ function triggerSynth(freq) {
     osc.setType(waveVal == 0 ? 'sawtooth' : 'square');
     let portTime = sldPort ? parseFloat(sldPort.value()) : 0.05;
     osc.freq(freq, portTime);
+    
+    // Trigger both envelopes
     ampEnv.play();
+    filterEnv.play();
 }
 
 function mousePressed() {
