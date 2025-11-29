@@ -3,102 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Content Security Policy to allow p5.sound to use eval() -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com data: blob:;">
+  
   <title>SH-101 / TB-303 Style Sequencer</title>
   <!-- Load p5.js and p5.sound -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
   <!-- Load your sketch logic -->
   <script src="sketch.js"></script>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #222;
-      color: #eee;
-      font-family: 'Courier New', Courier, monospace;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      overflow: hidden;
-    }
-    
-    #canvas-container {
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      border-radius: 8px;
-      overflow: hidden;
-      margin-bottom: 20px;
-    }
-
-    .controls {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 15px;
-      background: #333;
-      padding: 20px;
-      border-radius: 8px;
-      width: 800px; /* Matches the canvas width roughly */
-      box-sizing: border-box;
-      border: 1px solid #444;
-    }
-
-    .control-group {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-    }
-
-    label {
-      font-size: 12px;
-      margin-bottom: 5px;
-      color: #aaa;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-
-    button {
-      background: #eee;
-      color: #333;
-      border: none;
-      padding: 10px 20px;
-      font-family: inherit;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
-      transition: background 0.2s;
-      width: 100%;
-      text-transform: uppercase;
-    }
-
-    button:hover {
-      background: #fff;
-    }
-
-    button:active {
-      background: #ccc;
-    }
-
-    /* Active state for the start button */
-    button.active {
-      background: #ff4d4d;
-      color: white;
-    }
-
-    input[type=range] {
-      width: 100%;
-      accent-color: #0070dd;
-      cursor: pointer;
-    }
-    
-    /* Specific button styling */
-    #btn-random { background-color: #0070dd; color: white; }
-    #btn-random:hover { background-color: #0088ff; }
-    #btn-clear { background-color: #555; color: white; }
-    #btn-clear:hover { background-color: #666; }
-
-  </style>
+  <!-- Load your styles -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -112,7 +28,10 @@
         <button id="btn-toggle">Start</button>
         <button id="btn-clear">Clear</button>
       </div>
-      <button id="btn-random" style="margin-top: 10px;">Randomize</button>
+      <div style="display: flex; gap: 10px; width: 100%; margin-top: 10px;">
+        <button id="btn-random">Random</button>
+        <button id="btn-arp">Arp</button> <!-- Arp Button -->
+      </div>
     </div>
 
     <!-- Oscillator Controls -->
