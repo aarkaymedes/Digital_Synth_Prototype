@@ -6,9 +6,9 @@ const HEADER_WIDTH = 60; // Space for note labels
 const CANVAS_WIDTH = HEADER_WIDTH + (GRID_COLS * CELL_SIZE);
 const CANVAS_HEIGHT = GRID_ROWS * CELL_SIZE;
 
-// Updated Note names (Removed 'C (Hi)')
+// Note names
 const NOTE_LABELS = ['B', 'A#', 'A', 'G#', 'G', 'F#', 'F', 'E', 'D#', 'D', 'C#', 'C (Lo)'];
-// Updated MIDI note numbers (Removed 72)
+// MIDI note numbers
 const NOTE_MIDI = [71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60];
 
 // --- State ---
@@ -20,6 +20,7 @@ let nextStepTime = 0;
 // Arpeggiator State
 let isArpActive = false;
 let arpIndex = 0;
+// Pattern: Root, +3 semitones, +7 (5th), +10 (7th), +12 (Octave)...
 const ARP_PATTERN = [0, 3, 7, 10, 12, 10, 7, 3]; 
 
 // Synth components
@@ -111,6 +112,7 @@ function drawGrid() {
     let x = HEADER_WIDTH + (c * CELL_SIZE);
     
     if (isPlaying && c === currentStep) {
+      // Orange highlight if Arp is active, otherwise white
       if(isArpActive) fill(255, 165, 0, 80); 
       else fill(255, 255, 255, 50);
       noStroke();
@@ -137,27 +139,39 @@ function drawGrid() {
 function playStep() {
   if (!isAudioStarted) return;
 
-  if (isArpActive) {
-    let rootMidi = 60; 
-    let transpose = sldTrans ? int(sldTrans.value()) : 0;
-    let interval = ARP_PATTERN[arpIndex % ARP_PATTERN.length];
-    let noteMidi = rootMidi + transpose + interval;
-    triggerSynth(midiToFreq(noteMidi));
-    arpIndex++;
-  } else {
-    let activeRow = -1;
-    for (let r = 0; r < GRID_ROWS; r++) {
-      if (grid[currentStep][r]) {
-        activeRow = r;
-        break;
-      }
-    }
-    if (activeRow !== -1) {
-      let baseMidi = NOTE_MIDI[activeRow];
-      let transpose = sldTrans ? int(sldTrans.value()) : 0;
-      triggerSynth(midiToFreq(baseMidi + transpose));
+  // 1. Check if there is an active note at this step
+  let activeRow = -1;
+  for (let r = 0; r < GRID_ROWS; r++) {
+    if (grid[currentStep][r]) {
+      activeRow = r;
+      break;
     }
   }
+
+  // 2. Play Audio Logic
+  if (activeRow !== -1) {
+    // We found a note on the grid!
+    let baseMidi = NOTE_MIDI[activeRow];
+    let transpose = sldTrans ? int(sldTrans.value()) : 0;
+
+    if (isArpActive) {
+      // --- ARPEGGIATOR MODE ---
+      // Use the grid note as the root + add the arpeggio interval
+      let interval = ARP_PATTERN[arpIndex % ARP_PATTERN.length];
+      let noteMidi = baseMidi + transpose + interval;
+      triggerSynth(midiToFreq(noteMidi));
+      arpIndex++; 
+    } else {
+      // --- NORMAL MODE ---
+      // Just play the note
+      triggerSynth(midiToFreq(baseMidi + transpose));
+    }
+  } else {
+    // No note on grid -> Play nothing (Silence)
+    // If you want the Arp pattern to "keep counting" even during silence, keep this:
+    if (isArpActive) arpIndex++;
+  }
+
   currentStep = (currentStep + 1) % GRID_COLS;
 }
 
@@ -180,6 +194,7 @@ function mousePressed() {
 
       if (!wasActive) {
         grid[c][r] = true;
+        // Preview note only if not playing
         if (!isPlaying && isAudioStarted && !isArpActive) {
            let baseMidi = NOTE_MIDI[r];
            let transpose = sldTrans ? int(sldTrans.value()) : 0;
