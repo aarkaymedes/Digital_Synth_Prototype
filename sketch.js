@@ -66,23 +66,23 @@ function setup() {
 function setupSynth() {
   osc = new p5.Oscillator('sawtooth');
   
-  // TB-303 Style Filter
+  // TB-303 "Liquid" Filter Settings
   filter = new p5.LowPass();
-  filter.res(12); // Tuned for that specific "rubbery" resonance
+  filter.res(18); // High resonance for that "chirpy" liquid sound
   
-  // Distortion (The secret sauce for the video's sound)
-  dist = new p5.Distortion(0.05, 'none'); // Adds thickness/saturation
+  // Distortion (Subtle saturation)
+  dist = new p5.Distortion(0.05, 'none'); 
 
-  // Volume Envelope 
+  // Volume Envelope - Tight and punchy
   ampEnv = new p5.Envelope();
-  ampEnv.setADSR(0.001, 0.15, 0.0, 0.1); 
-  ampEnv.setRange(0.8, 0); 
+  ampEnv.setADSR(0.001, 0.1, 0.0, 0.1); 
+  ampEnv.setRange(0.7, 0); 
 
-  // Filter Envelope (The "Wow" sound)
+  // Filter Envelope - The "Zap"
   filterEnv = new p5.Envelope();
-  filterEnv.setADSR(0.001, 0.25, 0.0, 0.1); // Slightly longer decay for the "bow-wow"
-  // Sweep from 1000Hz (bite) down to 60Hz (thick bass)
-  filterEnv.setRange(1000, 60); 
+  filterEnv.setADSR(0.001, 0.15, 0.0, 0.1); // Faster decay = more squelch
+  // Sweep range: Opens wider (1500Hz) to bite, then clamps down to sub (60Hz)
+  filterEnv.setRange(1500, 60); 
   
   filter.freq(filterEnv);
 
