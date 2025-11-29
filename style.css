@@ -13,11 +13,21 @@ body {
 }
 
 #canvas-container {
+  /* Force dimensions so the container doesn't collapse if JS fails or loads late */
+  width: 700px; 
+  height: 520px;
+  background-color: #111; /* Dark placeholder background */
+  
   box-shadow: 0 10px 30px rgba(0,0,0,0.5);
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 20px;
   flex-shrink: 0; /* Prevents canvas from squishing */
+  
+  /* Centers the canvas inside if it's smaller */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .controls {
