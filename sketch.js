@@ -69,12 +69,12 @@ function setupSynth() {
   
   // TB-303 Filter (Low Pass)
   filter = new p5.LowPass();
-  filter.res(10); 
+  filter.res(5); // Start mild
   
   // Volume Envelope (Very punchy and short)
   ampEnv = new p5.Envelope();
   ampEnv.setADSR(0.005, 0.1, 0.0, 0.1); 
-  ampEnv.setRange(0.5, 0); 
+  ampEnv.setRange(0.6, 0); 
 
   // Filter Envelope (The "Wow" character)
   filterEnv = new p5.Envelope();
@@ -188,28 +188,29 @@ function triggerSynth(freq) {
     
     // --- Update Filter Params ---
     
-    // 1. Resonance
-    let resVal = sldRes ? parseFloat(sldRes.value()) : 10;
-    filter.res(resVal);
+    // 1. Resonance Mapping
+    // Map slider (0-25) to a useful Q range (1-22)
+    let rawRes = sldRes ? parseFloat(sldRes.value()) : 10;
+    let finalRes = map(rawRes, 0, 25, 1, 22);
+    filter.res(finalRes);
 
-    // 2. Gain Compensation
-    // As resonance goes UP, volume must go DOWN to prevent clipping/distortion
-    // Range of resVal is approx 0 to 30.
-    // Base volume 0.6, reduce by 0.015 per resonance unit
-    let compensatedVol = constrain(0.6 - (resVal * 0.015), 0.1, 0.6);
+    // 2. Smoother Gain Compensation
+    // Instead of a hard linear cut, use an inverse curve.
+    // This keeps bass loud at low Res, but tucks volume nicely at high Res.
+    let compensatedVol = 0.65 / (1 + (finalRes * 0.06));
     ampEnv.setRange(compensatedVol, 0);
 
     // 3. Decay
     let decayVal = sldDecay ? parseFloat(sldDecay.value()) : 0.2;
-    // Set Decay for both volume and filter envelopes
-    // A key 303 characteristic is that these are often linked
-    ampEnv.setADSR(0.005, decayVal * 0.5, 0.0, 0.1); // Volume decay is slightly faster
-    filterEnv.setADSR(0.005, decayVal, 0.0, 0.1);   // Filter decay creates the "wow"
+    // Volume envelope is fast
+    ampEnv.setADSR(0.005, decayVal * 0.6, 0.0, 0.1); 
+    // Filter envelope slightly longer for the "wow"
+    filterEnv.setADSR(0.005, decayVal, 0.0, 0.1);
 
     // 4. Cutoff
     let cutoffVal = sldCutoff ? parseFloat(sldCutoff.value()) : 1000;
-    // Envelope sweeps from Cutoff down to 50Hz
-    filterEnv.setRange(cutoffVal, 50);
+    // Sweep range
+    filterEnv.setRange(cutoffVal, 60);
 
     ampEnv.play();
     filterEnv.play();
