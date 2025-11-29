@@ -26,6 +26,10 @@ const ARP_PATTERN = [0, 3, 7, 10, 12, 10, 7, 3];
 let osc, ampEnv, filter, filterEnv; 
 let isAudioStarted = false;
 
+// MIDI State
+let midiAccess = null;
+let lastMidiNote = -1;
+
 // DOM Elements
 let btnToggle, btnClear, btnRandom, btnArp; 
 let sldWave, sldPort, sldTrans, sldTempo;
@@ -61,7 +65,58 @@ function setup() {
   if(btnArp) btnArp.mousePressed(toggleArp); 
   
   userStartAudio().then(() => {});
+  
+  // Initialize MIDI
+  initMIDI();
+  
   setupSynth();
+}
+
+// --- MIDI INITIALIZATION ---
+function initMIDI() {
+  if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess()
+      .then(onMIDISuccess, onMIDIFailure);
+  } else {
+    console.log('Web MIDI not supported in this browser.');
+  }
+}
+
+function onMIDISuccess(midi) {
+  midiAccess = midi;
+  console.log("MIDI Ready!");
+  // Log available outputs
+  for (var entry of midiAccess.outputs) {
+    var output = entry[1];
+    console.log("Output port [type:'" + output.type + "'] id:'" + output.id + "' manufacturer:'" + output.manufacturer + "' name:'" + output.name + "' version:'" + output.version + "'");
+  }
+}
+
+function onMIDIFailure(msg) {
+  console.log("Failed to get MIDI access - " + msg);
+}
+
+function sendMidiNote(noteNumber, velocity = 127) {
+  if (!midiAccess) return;
+
+  // 1. Send Note OFF for the previous note if it exists
+  // This ensures monophonic behavior like a real 303
+  if (lastMidiNote !== -1) {
+     sendToAllOutputs([0x80, lastMidiNote, 0]);
+  }
+
+  // 2. Send Note ON for new note
+  sendToAllOutputs([0x90, noteNumber, velocity]);
+  lastMidiNote = noteNumber;
+}
+
+function sendToAllOutputs(msg) {
+  // Broadcast to all connected MIDI ports (including Network Session)
+  if (!midiAccess) return;
+  const outputs = midiAccess.outputs.values();
+  for (const output of outputs) {
+    output.send(msg);
+  }
 }
 
 function setupSynth() {
@@ -162,16 +217,27 @@ function playStep() {
 
   if (activeRow !== -1) {
     let baseMidi = NOTE_MIDI[activeRow];
+    let finalNoteMidi = baseMidi; 
     
     if (isArpActive) {
       let interval = ARP_PATTERN[arpIndex % ARP_PATTERN.length];
-      let noteMidi = baseMidi + interval;
-      triggerSynth(midiToFreq(noteMidi));
+      finalNoteMidi = baseMidi + interval;
       arpIndex++; 
-    } else {
-      triggerSynth(midiToFreq(baseMidi));
     }
+    
+    // 1. Play Local Audio
+    triggerSynth(midiToFreq(finalNoteMidi));
+    
+    // 2. Send MIDI Out
+    sendMidiNote(finalNoteMidi);
+    
   } else {
+    // If step is empty, send Note Off to silence previous note
+    if (lastMidiNote !== -1) {
+        sendToAllOutputs([0x80, lastMidiNote, 0]);
+        lastMidiNote = -1;
+    }
+    
     if (isArpActive) arpIndex++;
   }
 
@@ -185,37 +251,29 @@ function triggerSynth(freq) {
     let portTime = 0.05; 
     osc.freq(freq, portTime);
     
-    // --- KEY CHANGES HERE ---
+    // --- Update Filter Params ---
     
-    // 1. Get Normalized Resonance (0.0 to 1.0)
     let rawRes = sldRes ? parseFloat(sldRes.value()) : 10;
-    let normRes = rawRes / 25.0; // Slider max is 25
+    let normRes = rawRes / 25.0; 
 
     // Map Resonance to Q (1 to 20)
-    filter.res(map(rawRes, 0, 25, 1, 20));
+    let finalRes = map(rawRes, 0, 25, 1, 20);
+    filter.res(finalRes);
 
-    // 2. Volume Thinning (Aggressive)
-    // At Low Res: Full Volume (0.8)
-    // At High Res: Very Low Volume (0.2) -> Kills the "thick bass"
-    let targetVol = map(normRes, 0, 1, 0.8, 0.2);
-    ampEnv.setRange(targetVol, 0);
+    // Smoother Gain Compensation
+    let compensatedVol = 0.65 / (1 + (finalRes * 0.06));
+    ampEnv.setRange(compensatedVol, 0);
 
-    // 3. Filter Envelope Scaling (Modulation Depth)
-    // At Low Res: Multiplier is small (0.2) -> Envelope barely moves -> NO SQUELCH
-    // At High Res: Multiplier is large (1.0) -> Envelope moves a lot -> MAX SQUELCH
+    // Filter Envelope Scaling
     let envDepth = map(normRes, 0, 1, 0.2, 1.0);
     
-    // Get Cutoff slider
     let cutoffSliderVal = sldCutoff ? parseFloat(sldCutoff.value()) : 1000;
-    let baseFreq = 60; // Sub bass floor
+    let baseFreq = 60; 
 
-    // Calculate dynamic peak frequency based on Resonance
     let sweepTop = baseFreq + ((cutoffSliderVal - baseFreq) * envDepth);
 
-    // Set the filter sweep
     filterEnv.setRange(sweepTop, baseFreq);
 
-    // 4. Decay
     let decayVal = sldDecay ? parseFloat(sldDecay.value()) : 0.2;
     ampEnv.setADSR(0.005, decayVal * 0.6, 0.0, 0.1); 
     filterEnv.setADSR(0.005, decayVal, 0.0, 0.1);
@@ -237,7 +295,11 @@ function mousePressed() {
         grid[c][r] = true;
         if (!isPlaying && isAudioStarted && !isArpActive) {
            let baseMidi = NOTE_MIDI[r];
+           
+           // Play Audio
            triggerSynth(midiToFreq(baseMidi));
+           // Send MIDI Preview
+           sendMidiNote(baseMidi);
         }
       }
     }
@@ -257,6 +319,12 @@ function togglePlay() {
   } else {
     if(btnToggle) { btnToggle.html("Start"); btnToggle.removeClass('active'); }
     osc.amp(0, 0.1);
+    
+    // Kill MIDI on stop
+    if(lastMidiNote !== -1) {
+        sendToAllOutputs([0x80, lastMidiNote, 0]);
+        lastMidiNote = -1;
+    }
   }
 }
 
