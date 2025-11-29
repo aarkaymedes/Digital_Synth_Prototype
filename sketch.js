@@ -8,8 +8,9 @@ const CANVAS_HEIGHT = GRID_ROWS * CELL_SIZE;
 
 // Note names
 const NOTE_LABELS = ['B', 'A#', 'A', 'G#', 'G', 'F#', 'F', 'E', 'D#', 'D', 'C#', 'C (Lo)'];
-// MIDI note numbers
-const NOTE_MIDI = [71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60];
+
+// MIDI note numbers - SHIFTED DOWN 2 OCTAVES FOR BASS (36-47)
+const NOTE_MIDI = [47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36];
 
 // --- State ---
 let grid = []; 
@@ -67,18 +68,18 @@ function setupSynth() {
   
   // TB-303 Style Filter: Low Pass with High Resonance
   filter = new p5.LowPass();
-  filter.res(15); // High resonance for the "acid" squelch
+  filter.res(20); // Maxed out resonance for deep "acid" squelch
   
   // Volume Envelope (Punchy, short decay)
   ampEnv = new p5.Envelope();
-  ampEnv.setADSR(0.005, 0.1, 0.0, 0.1); 
-  ampEnv.setRange(0.5, 0);
+  ampEnv.setADSR(0.001, 0.2, 0.0, 0.1); 
+  ampEnv.setRange(0.8, 0); // Boosted volume
 
   // Filter Envelope (The "Wow" sound)
-  // This sweeps the filter frequency down with every note
   filterEnv = new p5.Envelope();
-  filterEnv.setADSR(0.005, 0.2, 0.0, 0.2); // Fast attack, decay controls the "wow" length
-  filterEnv.setRange(3000, 300); // Sweep from 3000Hz down to 300Hz
+  filterEnv.setADSR(0.001, 0.3, 0.0, 0.2); // Fast attack, longer decay for the sweep
+  // Sweep range tuned for BASS: 1200Hz down to 50Hz (Sub-bass territory)
+  filterEnv.setRange(1200, 50); 
   
   // Connect the envelope to the filter's frequency parameter
   filter.freq(filterEnv);
