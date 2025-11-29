@@ -86,6 +86,13 @@ button.active {
   color: white;
 }
 
+/* Active state for the Arp button */
+button.active-arp {
+  background: #ff9900; /* Orange color for Arp */
+  color: white;
+  box-shadow: 0 0 10px #ff9900;
+}
+
 input[type=range] {
   width: 100%;
   accent-color: #0070dd;
@@ -97,3 +104,5 @@ input[type=range] {
 #btn-random:hover { background-color: #0088ff; }
 #btn-clear { background-color: #555; color: white; }
 #btn-clear:hover { background-color: #666; }
+#btn-arp { background-color: #444; color: #ddd; }
+#btn-arp:hover { background-color: #555; }
