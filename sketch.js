@@ -4,14 +4,13 @@ const DESIGN_H = 1080;
 
 // --- SEQUENCER STATE ---
 const STEP_COUNT = 16;
-// Pitch rows now represent a full chromatic octave (C to B)
-const PITCH_ROWS = 13; 
+const PITCH_ROWS = 13; // Chromatic octave (C to B)
 const BASE_MIDI = 48; // C3
 let sequence = []; // 2D Array: sequence[step][pitch_index] = boolean
 let currentStep = 0;
 let isPlaying = false;
 const BPM = 120;
-const STEP_INTERVAL_MS = 60000 / BPM / 4; 
+const STEP_INTERVAL_MS = 60000 / BPM / 4; // 16th note interval
 
 // Synth Components
 let monoOsc; 
@@ -28,12 +27,13 @@ const PORTAMENTO_MAX_MS = 200;
 
 // UI Layout Constants
 const BG_COLOR = [0, 80, 160]; // Deep Blue background from PNG
-const ACCENT_COLOR = [255, 120, 0]; // Orange/Red for active elements
+const ACCENT_COLOR = [255, 120, 0]; 
 const GRID_DOT_COLOR = [0, 60, 120];
 const STEP_ON_COLOR = [40, 40, 55]; // Black/dark gray squares
 const CONTROL_COLOR = [90, 90, 110];
+const STEP_ACTIVE_COLOR = [255, 255, 100]; // Yellow highlight
 
-// Grid Layout (Adjusted for tight fit)
+// Grid Layout
 const GRID_START_Y = 200;
 const GRID_START_X = 150;
 const CELL_SIZE_W = 100; // Step width
@@ -41,7 +41,7 @@ const CELL_SIZE_H = 60;  // Pitch height
 const LABEL_W = 50;     // Pitch label width
 
 // Slider Layout
-const SLIDER_Y = 900; // Moved down further
+const SLIDER_Y = 900; 
 const SLIDER_W = 400;
 const SLIDER_H = 20;
 const SLIDER_KNOB_R = 25;
@@ -57,7 +57,8 @@ const BUTTON_START_X = 1300;
 // Touch/Interaction State
 let sliderGrabbedID = -1; 
 let grabbedTouchID = -2; 
-const PITCH_LABELS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C"]; // C3 to C4
+const PITCH_LABELS = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B", "C"]; 
+
 
 // --- PRELOAD/SETUP/INIT FUNCTIONS ---
 function preload() {}
@@ -81,8 +82,6 @@ function windowResized() {
 }
 
 function initializeSequence() {
-    // sequence[step][pitch_index] = boolean
-    // Pitch Index 0 is the highest note (B), 12 is the lowest (C)
     sequence = Array(STEP_COUNT).fill(0).map(() => Array(PITCH_ROWS).fill(false));
 }
 
@@ -107,8 +106,7 @@ function playStep(step) {
     // 1. Identify all active notes at this step
     for (let pitchIndex = 0; pitchIndex < PITCH_ROWS; pitchIndex++) {
         if (sequence[step][pitchIndex]) {
-            // Note: pitchIndex 0 is the highest pitch (B), 12 is the lowest (C)
-            // MIDI Note = BASE_MIDI + 12 (B4) - pitchIndex
+            // Calculate MIDI Note: Highest pitch is B (Index 0), Lowest is C (Index 12)
             let midiNoteOffset = (PITCH_ROWS - 1) - pitchIndex;
             activeNotes.push(BASE_MIDI + midiNoteOffset); 
         }
@@ -121,7 +119,7 @@ function playStep(step) {
     monoOsc.amp(0, 0.01);
 
     if (activeNotes.length > 0) {
-        // For a monosynth, play the highest active note
+        // Monosynth plays the highest active note
         let noteMidi = activeNotes[activeNotes.length - 1] + transposeShift;
         let freq = midiToFreq(noteMidi);
         
@@ -132,6 +130,7 @@ function playStep(step) {
     }
 }
 
+// FIX: CSP-COMPLIANT INTERVAL
 function startSequencerLoop() {
     if (seqLoop) clearInterval(seqLoop);
 
@@ -150,6 +149,7 @@ function startSequencerLoop() {
 function draw() {
     background(BG_COLOR); 
     
+    // Apply responsive scaling based on 1920x1080 design resolution
     const scaleFactor = Math.min(windowWidth / DESIGN_W, windowHeight / DESIGN_H);
     
     push(); 
@@ -212,9 +212,9 @@ function drawSequencerGrid() {
     textSize(24);
     textAlign(RIGHT, CENTER);
     for (let pitch = 0; pitch < PITCH_ROWS; pitch++) {
-        // PITCH_ROWS - 1 - pitch maps row 0 to B, row 1 to A#, etc., row 12 to C
+        // Pitch 0 is B, Pitch 12 is C
         let labelIndex = (PITCH_ROWS - 1) - pitch; 
-        let noteLabel = PITCH_LABELS[labelIndex % 12] + (labelIndex === PITCH_ROWS - 1 ? '' : ''); // Optional octave number
+        let noteLabel = PITCH_LABELS[labelIndex % 12]; 
         text(noteLabel, GRID_START_X + LABEL_W - 5, gridY + pitch * CELL_SIZE_H + CELL_SIZE_H / 2);
     }
     
@@ -246,11 +246,11 @@ function drawSequencerGrid() {
             }
         }
         
-        // Step number label at top
+        // Step number label at bottom
         fill(255);
         textSize(18);
         textAlign(CENTER, BOTTOM);
-        text(step + 1, gridX + step * CELL_SIZE_W + CELL_SIZE_W / 2, GRID_START_Y - 5);
+        text(step + 1, gridX + step * CELL_SIZE_W + CELL_SIZE_W / 2, gridY + PITCH_ROWS * CELL_SIZE_H + 5);
     }
 }
 
@@ -325,11 +325,6 @@ function mapTouchToDesign(x, y) {
 
 function isOverButton(x, y, btnX, btnY, btnW, btnH) {
     return x > btnX && x < btnX + btnW && y > btnY && y < btnY + btnH;
-}
-
-function isOverSlider(x, y, id) {
-    let bounds = getSliderBounds(id);
-    return x > bounds.x && x < bounds.x + bounds.w && y > bounds.y && y < bounds.y + bounds.h;
 }
 
 function getSliderBounds(id) {
@@ -412,8 +407,8 @@ function touchStarted() {
             let bounds = getSliderBounds(i);
             let knobX = bounds.x + map(i === 0 ? portamentoSliderPos : (i === 1 ? transposeSliderPos : waveformSliderPos), 0, 1, 0, SLIDER_W);
 
-            // Check knob proximity
-            if (dist(tx, ty, knobX, bounds.y + bounds.h / 2) < SLIDER_KNOB_R) {
+            // Check proximity to the knob/track area
+            if (dist(tx, ty, knobX, bounds.y + bounds.h / 2) < SLIDER_KNOB_R * 1.5 || isOverSlider(tx, ty, i)) {
                 sliderGrabbedID = i;
                 grabbedTouchID = id; 
                 return false; 
@@ -441,8 +436,7 @@ function touchMoved() {
     if (sliderGrabbedID !== -1) {
         let inputX;
 
-        // Find the X coordinate of the specific input source
-        if (grabbedTouchID === -1) { // Mouse input
+        if (grabbedTouchID === -2) { // Mouse input
             inputX = mouseX;
         } else {
             let activeTouch = touches.find(t => t.id === grabbedTouchID);
@@ -450,7 +444,7 @@ function touchMoved() {
             inputX = activeTouch.x;
         }
 
-        let design = mapTouchToDesign(inputX, 0); // Only need X coordinate
+        let design = mapTouchToDesign(inputX, 0); 
         
         // Sliders are horizontal, so we use the design X coordinate
         updateSliderValue(sliderGrabbedID, design.x); 
@@ -464,7 +458,7 @@ function touchEnded() {
     if (sliderGrabbedID !== -1) {
         let isGrabbedInputReleased = true;
         
-        if (touches.length > 0) {
+        if (touches.length > 0 && grabbedTouchID !== -2) { // Check for multi-touch
             isGrabbedInputReleased = false;
             for (let t of touches) {
                 if (t.id === grabbedTouchID) {
@@ -488,7 +482,7 @@ function doubleClicked() {
     return false; 
 }
 
-// Utility functions (Unchanged)
+// Utility to convert MIDI to Note (for display)
 function midiToNote(midi) {
     const noteNames = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"];
     let octave = floor(midi / 12) - 1;
