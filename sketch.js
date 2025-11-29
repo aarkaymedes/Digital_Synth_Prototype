@@ -25,7 +25,7 @@ let arpIndex = 0;
 const ARP_PATTERN = [0, 3, 7, 10, 12, 10, 7, 3]; 
 
 // Synth components
-let osc, ampEnv, filter, filterEnv; // Added filterEnv
+let osc, ampEnv, filter, filterEnv, dist; // Added dist
 let isAudioStarted = false;
 
 // DOM Elements
@@ -66,27 +66,31 @@ function setup() {
 function setupSynth() {
   osc = new p5.Oscillator('sawtooth');
   
-  // TB-303 Style Filter: Low Pass with High Resonance
+  // TB-303 Style Filter
   filter = new p5.LowPass();
-  filter.res(10); // Reduced resonance to stop the squeaking/whistling
+  filter.res(12); // Tuned for that specific "rubbery" resonance
   
-  // Volume Envelope (Punchy, short decay)
+  // Distortion (The secret sauce for the video's sound)
+  dist = new p5.Distortion(0.05, 'none'); // Adds thickness/saturation
+
+  // Volume Envelope 
   ampEnv = new p5.Envelope();
-  ampEnv.setADSR(0.01, 0.1, 0.0, 0.1); // Slightly softer attack to avoid clicking
-  ampEnv.setRange(0.7, 0); 
+  ampEnv.setADSR(0.001, 0.15, 0.0, 0.1); 
+  ampEnv.setRange(0.8, 0); 
 
   // Filter Envelope (The "Wow" sound)
   filterEnv = new p5.Envelope();
-  filterEnv.setADSR(0.001, 0.2, 0.0, 0.1); // Fast attack, snappy decay
-  // Sweep range tuned for DARK BASS: 600Hz down to 50Hz
-  // This keeps the sound "muddy" and deep rather than buzzing
-  filterEnv.setRange(600, 50); 
+  filterEnv.setADSR(0.001, 0.25, 0.0, 0.1); // Slightly longer decay for the "bow-wow"
+  // Sweep from 1000Hz (bite) down to 60Hz (thick bass)
+  filterEnv.setRange(1000, 60); 
   
-  // Connect the envelope to the filter's frequency parameter
   filter.freq(filterEnv);
 
+  // Routing: Osc -> Filter -> Distortion -> Master
   osc.disconnect();
   osc.connect(filter);
+  filter.disconnect();
+  filter.connect(dist);
   
   osc.amp(ampEnv);
   osc.start();
