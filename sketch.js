@@ -16,6 +16,11 @@ const STEP_INTERVAL_MS = 60000 / BPM / 4; // 16th note interval
 let monoOsc; 
 let currentWaveform = 'sawtooth'; 
 
+// Scheduler Variables (NEW)
+let synthPart;
+let drumPart;
+let pattern; // Stores the sequence for the p5.Part
+
 // Slider States (Normalized 0.0 to 1.0)
 let portamentoSliderPos = 0.0;
 let transposeSliderPos = 0.5; 
@@ -74,7 +79,7 @@ function setup() {
     monoOsc.start();
     
     initializeSequence();
-    startSequencerLoop();
+    setupSequencer(); // NEW: Setup p5.Part and p5.Phrase
 }
 
 function windowResized() {
@@ -97,8 +102,35 @@ function randomizeSequence() {
     }
 }
 
+// NEW: Scheduler Setup
+function setupSequencer() {
+    // 1. Create a dummy pattern array to feed the p5.Phrase
+    pattern = Array(STEP_COUNT).fill(0).map((_, i) => i);
+    
+    // 2. Create the callback function for each step
+    function sequenceStep(time, stepIndex) {
+        // Update the visual indicator
+        currentStep = stepIndex;
+        
+        // Find the note to play
+        playStep(stepIndex);
+        redraw();
+    }
+    
+    // 3. Create the Phrase object
+    let synthPhrase = new p5.Phrase('synth-phrase', sequenceStep, pattern);
+    
+    // 4. Create the Part object (The master transport)
+    synthPart = new p5.Part();
+    synthPart.addPhrase(synthPhrase);
+    
+    // Set sequencing properties
+    synthPart.setBPM(BPM);
+    synthPart.loop = true;
+}
 
-// --- SEQUENCER AND AUDIO LOGIC ---
+
+// --- SEQUENCER AND AUDIO LOGIC (MODIFIED FOR SCHEDULER) ---
 
 function playStep(step) {
     let activeNotes = [];
@@ -106,7 +138,6 @@ function playStep(step) {
     // 1. Identify all active notes at this step
     for (let pitchIndex = 0; pitchIndex < PITCH_ROWS; pitchIndex++) {
         if (sequence[step][pitchIndex]) {
-            // Calculate MIDI Note: Highest pitch is B (Index 0), Lowest is C (Index 12)
             let midiNoteOffset = (PITCH_ROWS - 1) - pitchIndex;
             activeNotes.push(BASE_MIDI + midiNoteOffset); 
         }
@@ -119,7 +150,6 @@ function playStep(step) {
     monoOsc.amp(0, 0.01);
 
     if (activeNotes.length > 0) {
-        // Monosynth plays the highest active note
         let noteMidi = activeNotes[activeNotes.length - 1] + transposeShift;
         let freq = midiToFreq(noteMidi);
         
@@ -130,18 +160,19 @@ function playStep(step) {
     }
 }
 
-// FIX: CSP-COMPLIANT INTERVAL
+// FIX: CSP-COMPLIANT INTERVAL REPLACED WITH SCHEDULER PART
 function startSequencerLoop() {
-    if (seqLoop) clearInterval(seqLoop);
-
-    // This structure passes a direct function reference, avoiding the 'eval' error.
-    seqLoop = setInterval(function() {
-        if (isPlaying) {
-            playStep(currentStep);
-            currentStep = (currentStep + 1) % STEP_COUNT;
-            redraw(); 
-        }
-    }, STEP_INTERVAL_MS);
+    // This function now only controls the p5.Part transport
+    if (synthPart.isLooping()) {
+        synthPart.stop();
+        isPlaying = false;
+        monoOsc.amp(0, 0.2);
+    } else {
+        synthPart.start();
+        isPlaying = true;
+    }
+    // Set the scheduler to loop 16 times (one full pattern)
+    synthPart.setLoop(0, '16n'); 
 }
 
 
@@ -213,7 +244,6 @@ function drawSequencerGrid() {
     textSize(24);
     textAlign(RIGHT, CENTER);
     for (let pitch = 0; pitch < PITCH_ROWS; pitch++) {
-        // Pitch 0 is B, Pitch 12 is C
         let labelIndex = (PITCH_ROWS - 1) - pitch; 
         let noteLabel = PITCH_LABELS[labelIndex % 12]; 
         text(noteLabel, GRID_START_X + LABEL_W - 5, gridY + pitch * CELL_SIZE_H + CELL_SIZE_H / 2);
@@ -357,7 +387,7 @@ function updateSliderValue(id, x) {
 
 
 function touchStarted() {
-    // FIX 1: Ensure audio context starts on user interaction (reliable)
+    // Ensure audio context starts on user interaction
     userStartAudio(); 
 
     let inputSource = touches.length > 0 ? touches : [{x: mouseX, y: mouseY, id: -2}];
@@ -375,9 +405,9 @@ function touchStarted() {
         if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
             isPlaying = !isPlaying;
             if (isPlaying) {
-                currentStep = (currentStep + 1) % STEP_COUNT;
-                playStep(currentStep); 
+                synthPart.start(); // Start scheduler
             } else {
+                synthPart.stop(); // Stop scheduler
                 monoOsc.amp(0, 0.2); 
             }
             redraw();
@@ -388,6 +418,8 @@ function touchStarted() {
         // Clear Button
         if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
             clearSequence();
+            // Stop playing to reset gracefully
+            synthPart.stop();
             isPlaying = false;
             currentStep = 0;
             monoOsc.amp(0, 0.2);
@@ -433,7 +465,6 @@ function touchStarted() {
 }
 
 function touchMoved() {
-    // Correctly map the touch position to the design space and handle slider drag
     if (sliderGrabbedID !== -1) {
         let inputX;
 
@@ -447,7 +478,6 @@ function touchMoved() {
 
         let design = mapTouchToDesign(inputX, 0); 
         
-        // Sliders are horizontal, so we use the design X coordinate
         updateSliderValue(sliderGrabbedID, design.x); 
         redraw();
         return false;
@@ -455,7 +485,6 @@ function touchMoved() {
 }
 
 function touchEnded() {
-    // Check if the input that ended was the one controlling the slider
     if (sliderGrabbedID !== -1) {
         let isGrabbedInputReleased = true;
         
@@ -475,7 +504,6 @@ function touchEnded() {
             return false;
         }
     }
-    // Return false to prevent mobile zooming/scrolling
     return false;
 }
 
