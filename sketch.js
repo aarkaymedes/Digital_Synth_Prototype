@@ -408,7 +408,7 @@ function touchStarted() {
             let knobX = bounds.x + map(i === 0 ? portamentoSliderPos : (i === 1 ? transposeSliderPos : waveformSliderPos), 0, 1, 0, SLIDER_W);
 
             // Check proximity to the knob/track area
-            if (dist(tx, ty, knobX, bounds.y + bounds.h / 2) < SLIDER_KNOB_R * 1.5 || isOverSlider(tx, ty, i)) {
+            if (dist(tx, ty, knobX, bounds.y + bounds.h / 2) < SLIDER_KNOB_R * 1.5 || isOverButton(tx, ty, bounds.x, bounds.y, bounds.w, bounds.h)) {
                 sliderGrabbedID = i;
                 grabbedTouchID = id; 
                 return false; 
@@ -432,7 +432,7 @@ function touchStarted() {
 }
 
 function touchMoved() {
-    // FIX 2: Correctly map the touch position to the design space and handle slider drag
+    // Correctly map the touch position to the design space and handle slider drag
     if (sliderGrabbedID !== -1) {
         let inputX;
 
@@ -458,7 +458,7 @@ function touchEnded() {
     if (sliderGrabbedID !== -1) {
         let isGrabbedInputReleased = true;
         
-        if (touches.length > 0 && grabbedTouchID !== -2) { // Check for multi-touch
+        if (touches.length > 0 && grabbedTouchID !== -2) {
             isGrabbedInputReleased = false;
             for (let t of touches) {
                 if (t.id === grabbedTouchID) {
@@ -487,6 +487,5 @@ function midiToNote(midi) {
     const noteNames = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"];
     let octave = floor(midi / 12) - 1;
     let note = noteNames[midi % 12];
-    // Return just the note name for the grid display (C, C#, D, etc.)
     return `${note}`;
 }
