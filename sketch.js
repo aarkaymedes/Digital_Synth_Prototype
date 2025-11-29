@@ -10,16 +10,14 @@ let sequence = []; // 2D Array: sequence[step][pitch_index] = boolean
 let currentStep = 0;
 let isPlaying = false;
 const BPM = 120;
-const STEP_INTERVAL_MS = 60000 / BPM / 4; // 16th note interval
 
 // Synth Components
 let monoOsc; 
 let currentWaveform = 'sawtooth'; 
 
-// Scheduler Variables (NEW)
+// Scheduler Variables (CLEANED)
 let synthPart;
-let drumPart;
-let pattern; // Stores the sequence for the p5.Part
+let pattern; 
 
 // Slider States (Normalized 0.0 to 1.0)
 let portamentoSliderPos = 0.0;
@@ -31,19 +29,19 @@ const TRANSPOSE_RANGE = 12;
 const PORTAMENTO_MAX_MS = 200;
 
 // UI Layout Constants
-const BG_COLOR = [0, 80, 160]; // Deep Blue background from PNG
+const BG_COLOR = [0, 80, 160]; 
 const ACCENT_COLOR = [255, 120, 0]; 
 const GRID_DOT_COLOR = [0, 60, 120];
-const STEP_ON_COLOR = [40, 40, 55]; // Black/dark gray squares
+const STEP_ON_COLOR = [40, 40, 55]; 
 const CONTROL_COLOR = [90, 90, 110];
-const STEP_ACTIVE_COLOR = [255, 255, 100]; // Yellow highlight
+const STEP_ACTIVE_COLOR = [255, 255, 100]; 
 
 // Grid Layout
 const GRID_START_Y = 200;
 const GRID_START_X = 150;
-const CELL_SIZE_W = 100; // Step width
-const CELL_SIZE_H = 60;  // Pitch height
-const LABEL_W = 50;     // Pitch label width
+const CELL_SIZE_W = 100; 
+const CELL_SIZE_H = 60;  
+const LABEL_W = 50;     
 
 // Slider Layout
 const SLIDER_Y = 900; 
@@ -79,7 +77,7 @@ function setup() {
     monoOsc.start();
     
     initializeSequence();
-    setupSequencer(); // NEW: Setup p5.Part and p5.Phrase
+    setupSequencer(); 
 }
 
 function windowResized() {
@@ -102,19 +100,20 @@ function randomizeSequence() {
     }
 }
 
-// NEW: Scheduler Setup
+// FIX: SCHEDULER SETUP IS THE ONLY TIMING SOURCE
 function setupSequencer() {
-    // 1. Create a dummy pattern array to feed the p5.Phrase
+    // 1. Create a pattern array from 0 to 15
     pattern = Array(STEP_COUNT).fill(0).map((_, i) => i);
     
-    // 2. Create the callback function for each step
+    // 2. The callback function for each 16th note step
     function sequenceStep(time, stepIndex) {
-        // Update the visual indicator
+        // Update the visual indicator safely
         currentStep = stepIndex;
         
         // Find the note to play
         playStep(stepIndex);
-        redraw();
+        // Request a redraw to update the UI visuals
+        if (isPlaying) redraw(); 
     }
     
     // 3. Create the Phrase object
@@ -124,18 +123,17 @@ function setupSequencer() {
     synthPart = new p5.Part();
     synthPart.addPhrase(synthPhrase);
     
-    // Set sequencing properties
     synthPart.setBPM(BPM);
-    synthPart.loop = true;
+    // Set the part to loop once every 16 steps (one bar in 4/4)
+    synthPart.setLoop(0, '16n'); 
 }
 
 
-// --- SEQUENCER AND AUDIO LOGIC (MODIFIED FOR SCHEDULER) ---
+// --- SEQUENCER AND AUDIO LOGIC ---
 
 function playStep(step) {
     let activeNotes = [];
     
-    // 1. Identify all active notes at this step
     for (let pitchIndex = 0; pitchIndex < PITCH_ROWS; pitchIndex++) {
         if (sequence[step][pitchIndex]) {
             let midiNoteOffset = (PITCH_ROWS - 1) - pitchIndex;
@@ -143,7 +141,6 @@ function playStep(step) {
         }
     }
 
-    // 2. Transpose, Portamento, and Waveform Update
     let transposeShift = floor(map(transposeSliderPos, 0, 1, -TRANSPOSE_RANGE, TRANSPOSE_RANGE));
     let portamentoTime = map(portamentoSliderPos, 0, 1, 0, PORTAMENTO_MAX_MS) / 1000;
     
@@ -158,21 +155,6 @@ function playStep(step) {
     } else {
         monoOsc.amp(0, 0.1);
     }
-}
-
-// FIX: CSP-COMPLIANT INTERVAL REPLACED WITH SCHEDULER PART
-function startSequencerLoop() {
-    // This function now only controls the p5.Part transport
-    if (synthPart.isLooping()) {
-        synthPart.stop();
-        isPlaying = false;
-        monoOsc.amp(0, 0.2);
-    } else {
-        synthPart.start();
-        isPlaying = true;
-    }
-    // Set the scheduler to loop 16 times (one full pattern)
-    synthPart.setLoop(0, '16n'); 
 }
 
 
@@ -387,7 +369,6 @@ function updateSliderValue(id, x) {
 
 
 function touchStarted() {
-    // Ensure audio context starts on user interaction
     userStartAudio(); 
 
     let inputSource = touches.length > 0 ? touches : [{x: mouseX, y: mouseY, id: -2}];
@@ -405,10 +386,12 @@ function touchStarted() {
         if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
             isPlaying = !isPlaying;
             if (isPlaying) {
-                synthPart.start(); // Start scheduler
+                // Use scheduler transport
+                synthPart.start(); 
             } else {
-                synthPart.stop(); // Stop scheduler
+                synthPart.stop(); 
                 monoOsc.amp(0, 0.2); 
+                currentStep = 0; // Reset visual step indicator
             }
             redraw();
             return false;
@@ -418,7 +401,6 @@ function touchStarted() {
         // Clear Button
         if (isOverButton(tx, ty, x, BUTTON_Y, BUTTON_W, BUTTON_H)) {
             clearSequence();
-            // Stop playing to reset gracefully
             synthPart.stop();
             isPlaying = false;
             currentStep = 0;
@@ -440,7 +422,6 @@ function touchStarted() {
             let bounds = getSliderBounds(i);
             let knobX = bounds.x + map(i === 0 ? portamentoSliderPos : (i === 1 ? transposeSliderPos : waveformSliderPos), 0, 1, 0, SLIDER_W);
 
-            // Check proximity to the knob/track area
             if (dist(tx, ty, knobX, bounds.y + bounds.h / 2) < SLIDER_KNOB_R * 1.5 || isOverButton(tx, ty, bounds.x, bounds.y, bounds.w, bounds.h)) {
                 sliderGrabbedID = i;
                 grabbedTouchID = id; 
