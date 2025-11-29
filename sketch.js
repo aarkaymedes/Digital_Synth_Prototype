@@ -1,15 +1,13 @@
 // --- Configuration ---
 const GRID_COLS = 16;
-const GRID_ROWS = 12; // Adjusted rows to remove High C
+const GRID_ROWS = 13; // C to C (one octave)
 const CELL_SIZE = 40;
 const HEADER_WIDTH = 60; // Space for note labels
 const CANVAS_WIDTH = HEADER_WIDTH + (GRID_COLS * CELL_SIZE);
 const CANVAS_HEIGHT = GRID_ROWS * CELL_SIZE;
 
-// Updated Note names (Removed 'C (Hi)')
-const NOTE_LABELS = ['B', 'A#', 'A', 'G#', 'G', 'F#', 'F', 'E', 'D#', 'D', 'C#', 'C (Lo)'];
-// Updated MIDI note numbers (Removed 72)
-const NOTE_MIDI = [71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60];
+const NOTE_LABELS = ['C (Hi)', 'B', 'A#', 'A', 'G#', 'G', 'F#', 'F', 'E', 'D#', 'D', 'C#', 'C (Lo)'];
+const NOTE_MIDI = [72, 71, 70, 69, 68, 67, 66, 65, 64, 63, 62, 61, 60];
 
 // --- State ---
 let grid = []; 
