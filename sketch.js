@@ -253,27 +253,35 @@ function triggerSynth(freq) {
     
     // --- Update Filter Params ---
     
+    // 1. Get Normalized Resonance (0.0 to 1.0)
     let rawRes = sldRes ? parseFloat(sldRes.value()) : 10;
-    let normRes = rawRes / 25.0; 
+    let normRes = rawRes / 25.0; // Slider max is 25
 
     // Map Resonance to Q (1 to 20)
-    let finalRes = map(rawRes, 0, 25, 1, 20);
-    filter.res(finalRes);
+    filter.res(map(rawRes, 0, 25, 1, 20));
 
-    // Smoother Gain Compensation
-    let compensatedVol = 0.65 / (1 + (finalRes * 0.06));
-    ampEnv.setRange(compensatedVol, 0);
+    // 2. Volume Thinning (Aggressive)
+    // At Low Res: Full Volume (0.8)
+    // At High Res: Very Low Volume (0.2) -> Kills the "thick bass"
+    let targetVol = map(normRes, 0, 1, 0.8, 0.2);
+    ampEnv.setRange(targetVol, 0);
 
-    // Filter Envelope Scaling
+    // 3. Filter Envelope Scaling (Modulation Depth)
+    // At Low Res: Multiplier is small (0.2) -> Envelope barely moves -> NO SQUELCH
+    // At High Res: Multiplier is large (1.0) -> Envelope moves a lot -> MAX SQUELCH
     let envDepth = map(normRes, 0, 1, 0.2, 1.0);
     
+    // Get Cutoff slider
     let cutoffSliderVal = sldCutoff ? parseFloat(sldCutoff.value()) : 1000;
-    let baseFreq = 60; 
+    let baseFreq = 60; // Sub bass floor
 
+    // Calculate dynamic peak frequency based on Resonance
     let sweepTop = baseFreq + ((cutoffSliderVal - baseFreq) * envDepth);
 
+    // Set the filter sweep
     filterEnv.setRange(sweepTop, baseFreq);
 
+    // 4. Decay
     let decayVal = sldDecay ? parseFloat(sldDecay.value()) : 0.2;
     ampEnv.setADSR(0.005, decayVal * 0.6, 0.0, 0.1); 
     filterEnv.setADSR(0.005, decayVal, 0.0, 0.1);
