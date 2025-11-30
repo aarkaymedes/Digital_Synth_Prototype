@@ -111,11 +111,16 @@ function sendMidiNote(noteNumber, velocity = 127) {
 }
 
 function sendToAllOutputs(msg) {
-  // Broadcast to all connected MIDI ports (including Network Session)
+  // Send only to the specific MIDI Network Session
   if (!midiAccess) return;
   const outputs = midiAccess.outputs.values();
+
   for (const output of outputs) {
-    output.send(msg);
+    // We check the device name reported by the browser's console output
+    if (output.name === "Network Session 1") { 
+      output.send(msg);
+      // Optional: You can add 'return;' here to stop searching once found
+    }
   }
 }
 
