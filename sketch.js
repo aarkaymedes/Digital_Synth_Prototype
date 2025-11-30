@@ -117,7 +117,7 @@ function sendToAllOutputs(msg) {
 
   for (const output of outputs) {
     // We check the device name reported by the browser's console output
-    if (output.name === "Network Session 1") { 
+    if (output.name === "iPad") { 
       output.send(msg);
       // Optional: You can add 'return;' here to stop searching once found
     }
